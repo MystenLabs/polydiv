@@ -76,8 +76,9 @@ fn arkworks_to_fastcrypto(f: &Fr) -> Scalar {
 #[cfg(test)]
 mod tests {
     use crate::{BLS12381Domain, FFTDomain};
-    use fastcrypto::groups::bls12381::Scalar;
-    use fastcrypto::groups::GroupElement;
+    use fastcrypto::groups::bls12381::{G1Element, G2Element, GTElement, Scalar};
+    use fastcrypto::groups::{GroupElement, HashToGroupElement, MultiScalarMul, Pairing};
+    use std::ops::{Add, Mul};
 
     #[test]
     fn test_fft() {
@@ -91,5 +92,28 @@ mod tests {
         let v_hat = domain.fft(&v);
         let v_prime = domain.ifft(&v_hat);
         assert_eq!(v, v_prime);
+    }
+
+    #[test]
+    fn test_pairing() {
+        let a = G1Element::generator().mul(Scalar::from(7));
+        let b = G2Element::generator().mul(Scalar::from(5));
+        let c = a.pairing(&b);
+
+        let expected = GTElement::generator().mul(Scalar::from(35));
+        assert_eq!(c, expected);
+    }
+
+    #[test]
+    fn test_msm() {
+        let g = G1Element::hash_to_group_element(b"hello");
+        let h = G1Element::hash_to_group_element(b"world");
+
+        let scalars = vec![Scalar::from(3), Scalar::from(5)];
+        let elements = vec![g, h];
+        let result = G1Element::multi_scalar_mul(&scalars, &elements).unwrap();
+
+        let expected = g.mul(Scalar::from(3)).add(&h.mul(Scalar::from(5)));
+        assert_eq!(result, expected);
     }
 }
