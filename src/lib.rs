@@ -61,20 +61,6 @@ impl FFTDomain<Scalar> for BLS12381Domain {
     }
 }
 
-#[test]
-fn test_fft() {
-    let domain = BLS12381Domain::new(4).unwrap();
-    let v = vec![
-        Scalar::generator(),
-        Scalar::zero(),
-        Scalar::generator(),
-        Scalar::zero(),
-    ];
-    let v_hat = domain.fft(&v);
-    let v_prime = domain.ifft(&v_hat);
-    assert_eq!(v, v_prime);
-}
-
 /// Convert a BLS12-381 field element from the fastcrypto group to an arkworks field element.
 fn fastcrypto_to_arkworks(s: &Scalar) -> Fr {
     let bytes = s.to_byte_array();
@@ -85,4 +71,25 @@ fn fastcrypto_to_arkworks(s: &Scalar) -> Fr {
 fn arkworks_to_fastcrypto(f: &Fr) -> Scalar {
     let bytes: [u8; 32] = f.into_bigint().to_bytes_be().try_into().unwrap();
     Scalar::from_byte_array(&bytes).unwrap()
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{BLS12381Domain, FFTDomain};
+    use fastcrypto::groups::bls12381::Scalar;
+    use fastcrypto::groups::GroupElement;
+
+    #[test]
+    fn test_fft() {
+        let domain = BLS12381Domain::new(4).unwrap();
+        let v = vec![
+            Scalar::generator(),
+            Scalar::zero(),
+            Scalar::generator(),
+            Scalar::zero(),
+        ];
+        let v_hat = domain.fft(&v);
+        let v_prime = domain.ifft(&v_hat);
+        assert_eq!(v, v_prime);
+    }
 }
