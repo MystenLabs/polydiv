@@ -96,7 +96,8 @@ impl crate::KZG<Scalar, G1Projective> for KZGOriginal {
         let omega = self.domain.element(index);
         let divisor = DensePolynomial::from_coefficients_slice(&[-omega, Fr::one()]);
         let (quotient, remainder) = polynomial_division(&adjusted_poly, &divisor);
-        let mut open_value = self.tau_powers_g1[0];
+
+        let mut open_value = G1Projective::zero();
         for (i, coeff) in quotient.coeffs.iter().enumerate() {
             open_value += self.tau_powers_g1[i].mul(*coeff);
         }
