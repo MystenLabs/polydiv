@@ -1,14 +1,16 @@
-use ark_bls12_381::{Fr, G1Projective, G1Affine, G2Projective, G2Affine, Bls12_381};
-use ark_ec::{pairing::Pairing, AffineRepr, CurveGroup, Group};
-use ark_ff::{Field, UniformRand, PrimeField, BigInteger256, Zero, One};
-use ark_poly::{univariate::DensePolynomial, EvaluationDomain, GeneralEvaluationDomain, Polynomial, DenseUVPolynomial};
+use std::ops::{AddAssign, Div, MulAssign, SubAssign};
+use std::ops::Mul;
+
+use ark_bls12_381::{Bls12_381, Fr, G1Projective, G2Projective};
+use ark_ec::{AffineRepr, CurveGroup, Group, pairing::Pairing};
+use ark_ff::{Field, One, PrimeField, UniformRand, Zero};
+use ark_poly::{DenseUVPolynomial, EvaluationDomain, GeneralEvaluationDomain, Polynomial};
 use fastcrypto::error::{FastCryptoError, FastCryptoResult};
 use fastcrypto::groups::bls12381::Scalar;
 use fastcrypto::groups::Scalar as OtherScalar;
-use rand::rngs::OsRng;
-use std::ops::{AddAssign, SubAssign, MulAssign, Div};
 use fastcrypto::serde_helpers::ToFromByteArray;
-use std::ops::Mul;
+use rand::rngs::OsRng;
+
 use crate::KZG;
 
 // Function to convert fastcrypto::Scalar to ark_bls12_381::Fr
@@ -16,14 +18,14 @@ fn scalar_to_fr(scalar: &Scalar) -> Fr {
     Fr::from_be_bytes_mod_order(&scalar.to_byte_array())
 }
 
-fn polynomial_division(dividend: &DensePolynomial<Fr>, divisor: &DensePolynomial<Fr>) -> (DensePolynomial<Fr>, DensePolynomial<Fr>) {
-    let mut quotient_coeffs = vec![Fr::zero(); dividend.coeffs.len() - divisor.coeffs.len() + 1];
-    let mut remainder_coeffs = dividend.coeffs.clone();
+fn polynomial_division(dividend: &[Fr], divisor: &[Fr]) -> (Vec<Fr>, Vec<Fr>) {
+    let mut quotient_coeffs = vec![Fr::zero(); dividend.len() - divisor.len() + 1];
+    let mut remainder_coeffs = Vec::from(dividend);
 
     for i in (0..quotient_coeffs.len()).rev() {
-        quotient_coeffs[i] = remainder_coeffs[i + divisor.coeffs.len() - 1] / divisor.coeffs.last().unwrap();
-        for j in 0..divisor.coeffs.len() {
-            remainder_coeffs[i + j] -= quotient_coeffs[i] * divisor.coeffs[j];
+        quotient_coeffs[i] = remainder_coeffs[i + divisor.len() - 1] / divisor.last().unwrap();
+        for j in 0..divisor.len() {
+            remainder_coeffs[i + j] -= quotient_coeffs[i] * divisor[j];
         }
     }
 
@@ -32,7 +34,7 @@ fn polynomial_division(dividend: &DensePolynomial<Fr>, divisor: &DensePolynomial
         remainder_coeffs.pop();
     }
 
-    (DensePolynomial::from_coefficients_vec(quotient_coeffs), DensePolynomial::from_coefficients_vec(remainder_coeffs))
+    (quotient_coeffs, remainder_coeffs)
 }
 
 
@@ -76,9 +78,9 @@ impl KZGOriginal {
 impl crate::KZG<Scalar, G1Projective> for KZGOriginal {
     fn commit(&self, v: &[Scalar]) -> G1Projective {
         let v_fr: Vec<Fr> = v.iter().map(scalar_to_fr).collect();
-        let poly = DensePolynomial::from_coefficients_vec(self.domain.ifft(&v_fr));
+        let poly = self.domain.ifft(&v_fr);
         let mut commitment = G1Projective::zero();
-        for (i, coeff) in poly.coeffs.iter().enumerate() {
+        for (i, coeff) in poly.iter().enumerate() {
             commitment += self.tau_powers_g1[i].mul(*coeff);
         }
         commitment
@@ -86,25 +88,24 @@ impl crate::KZG<Scalar, G1Projective> for KZGOriginal {
 
     fn open(&self, v: &[Scalar], index: usize) -> G1Projective {
         let v_fr: Vec<Fr> = v.iter().map(scalar_to_fr).collect();
-        let poly = DensePolynomial::from_coefficients_vec(self.domain.ifft(&v_fr));
+        let poly = self.domain.ifft(&v_fr);
         println!("{:?}", poly);
         let v_index_fr = scalar_to_fr(&v[index]);
-        let mut adjusted_poly_coeffs = poly.coeffs.clone();
-        adjusted_poly_coeffs[0] -= v_index_fr;
-        let adjusted_poly = DensePolynomial::from_coefficients_vec(adjusted_poly_coeffs);
+        let mut adjusted_poly = poly.clone();
+        adjusted_poly[0] -= v_index_fr;
         println!("{:?}", adjusted_poly);
         let omega = self.domain.element(index);
-        let divisor = DensePolynomial::from_coefficients_slice(&[-omega, Fr::one()]);
+        let divisor = [-omega, Fr::one()];
         let (quotient, remainder) = polynomial_division(&adjusted_poly, &divisor);
 
         let mut open_value = G1Projective::zero();
-        for (i, coeff) in quotient.coeffs.iter().enumerate() {
+        for (i, coeff) in quotient.iter().enumerate() {
             open_value += self.tau_powers_g1[i].mul(*coeff);
         }
 
         // //check that the opening is correct without group operations
-        let rhs_poly = &divisor*&quotient;
-        println!("{}", adjusted_poly == rhs_poly);
+        //let rhs_poly = &divisor*&quotient;
+        //println!("{}", adjusted_poly == rhs_poly);
 
         open_value
     }
@@ -133,10 +134,10 @@ impl crate::KZG<Scalar, G1Projective> for KZGOriginal {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use fastcrypto::groups::bls12381::Scalar;
-    use rand::Rng;  // Use `rand` crate directly
-    use ark_ff::UniformRand;
+    use rand::Rng;
+
+    use super::*;
 
     #[test]
     fn test_kzg_commit_open_verify() {
