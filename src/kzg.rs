@@ -1,17 +1,10 @@
 // Declare the modules
-
-pub mod kzg_original;
-pub mod kzg_fk;
-pub mod kzg_tabdfk;
-pub mod kzg;
-
 use ark_ff::{BigInteger, PrimeField};
 use ark_poly::EvaluationDomain;
 use fastcrypto::serde_helpers::ToFromByteArray;
 use fastcrypto::groups::bls12381::Scalar;
 use ark_bls12_381::{Fr, G1Projective, G1Affine, G2Affine, Bls12_381};
 
-mod fft;
 
 pub trait KZG<G, C> {
     fn commit(&self, v: &[G]) -> C;
