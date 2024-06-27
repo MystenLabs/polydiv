@@ -5,20 +5,22 @@ use fastcrypto::error::{FastCryptoError, FastCryptoResult};
 use fastcrypto::groups::bls12381::Scalar;
 use fastcrypto::serde_helpers::ToFromByteArray;
 
-pub trait FFTDomain<G>: Sized {
+pub trait FFTDomain: Sized {
+    type ScalarType;
+
     /// Create a new domain with at least `n` elements. Fails
     fn new(n: usize) -> FastCryptoResult<Self>;
 
     /// Compute the FFT of a vector of field elements. If the input is smaller than
     /// the domain size, it is padded with zeros. If it is larger, the input is truncated.
-    fn fft(&self, v: &[G]) -> Vec<G>;
+    fn fft(&self, v: &[Self::ScalarType]) -> Vec<Self::ScalarType>;
 
     /// Compute the inverse FFT of a vector of field elements. If the input is smaller than
     /// the domain size, it is padded with zeros. If it is larger, the input is truncated.
-    fn ifft(&self, v_hat: &[G]) -> Vec<G>;
+    fn ifft(&self, v_hat: &[Self::ScalarType]) -> Vec<Self::ScalarType>;
 
     /// Get the i'th power of the root of unity.
-    fn element(&self, index: usize) -> G;
+    fn element(&self, index: usize) -> Self::ScalarType;
 
     /// Get the size of the domain.
     fn size(&self) -> usize;
@@ -28,7 +30,9 @@ pub struct BLS12381Domain {
     domain: GeneralEvaluationDomain<Fr>,
 }
 
-impl FFTDomain<Scalar> for BLS12381Domain {
+impl FFTDomain for BLS12381Domain {
+    type ScalarType = Scalar;
+
     fn new(n: usize) -> FastCryptoResult<Self> {
         let domain = GeneralEvaluationDomain::<Fr>::new(n).ok_or(FastCryptoError::InvalidInput)?;
         Ok(Self { domain })
