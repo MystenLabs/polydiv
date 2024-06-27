@@ -1,9 +1,8 @@
-use std::ops::{Add, Mul};
-
 use fastcrypto::error::{FastCryptoError, FastCryptoResult};
 use fastcrypto::groups::bls12381::{G1Element, G2Element, Scalar};
 use fastcrypto::groups::{GroupElement, MultiScalarMul, Pairing, Scalar as OtherScalar};
 use rand::thread_rng;
+use std::ops::Mul;
 
 use crate::fft::{BLS12381Domain, FFTDomain};
 use crate::KZG;
@@ -45,24 +44,14 @@ impl KZGOriginal {
         let tau = Scalar::rand(&mut thread_rng());
 
         // Compute g^tau^i for i = 0 to n-1 in G1
-        let g1 = G1Element::generator();
-        let mut tau_powers_g1 = Vec::with_capacity(n);
-        let mut current_power_g1 = g1;
-        tau_powers_g1.push(current_power_g1);
-        for _ in 1..n {
-            current_power_g1 *= tau;
-            tau_powers_g1.push(current_power_g1);
-        }
+        let tau_powers_g1: Vec<G1Element> = itertools::iterate(G1Element::generator(), |g| g * tau)
+            .take(n)
+            .collect();
 
         // Compute g^tau^i for i = 0 to n-1 in G2
-        let g2 = G2Element::generator();
-        let mut tau_powers_g2 = Vec::with_capacity(n);
-        let mut current_power_g2 = g2;
-        tau_powers_g2.push(current_power_g2);
-        for _ in 1..n {
-            current_power_g2 *= tau;
-            tau_powers_g2.push(current_power_g2);
-        }
+        let tau_powers_g2: Vec<G2Element> = itertools::iterate(G2Element::generator(), |g| g * tau)
+            .take(n)
+            .collect();
 
         Ok(Self {
             domain,
