@@ -17,7 +17,7 @@ pub trait FFTDomain<G>: Sized {
     /// the domain size, it is padded with zeros. If it is larger, the input is truncated.
     fn ifft(&self, v_hat: &[G]) -> Vec<G>;
 
-    /// Get the nth root of unity of the domain.
+    /// Get the i'th power of the root of unity.
     fn element(&self, index: usize) -> G;
 
     /// Get the size of the domain.
