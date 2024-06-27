@@ -18,7 +18,7 @@ pub trait FFTDomain<G>: Sized {
     fn ifft(&self, v_hat: &[G]) -> Vec<G>;
 
     /// Get the nth root of unity of the domain.
-    fn root_of_unity(&self) -> G;
+    fn element(&self, index: usize) -> G;
 
     /// Get the size of the domain.
     fn size(&self) -> usize;
@@ -52,8 +52,8 @@ impl FFTDomain<Scalar> for BLS12381Domain {
             .collect::<Vec<_>>()
     }
 
-    fn root_of_unity(&self) -> Scalar {
-        arkworks_to_fastcrypto(&self.domain.group_gen())
+    fn element(&self, index: usize) -> Scalar {
+        arkworks_to_fastcrypto(&self.domain.element(index))
     }
 
     fn size(&self) -> usize {
