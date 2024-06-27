@@ -11,3 +11,4 @@ ark-bls12-381 = { version = "0.4.0", default-features = false, features = ["curv
 ark-ff = "0.4.2"
 ark-ec = "0.4.2"
 rand = "0.8.4"
+itertools = "0.13.0"
