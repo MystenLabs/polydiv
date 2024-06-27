@@ -11,23 +11,27 @@ fn polynomial_division(
     dividend: &[Scalar],
     divisor: &[Scalar],
 ) -> FastCryptoResult<(Vec<Scalar>, Vec<Scalar>)> {
-    let mut quotient_coeffs = vec![Scalar::zero(); dividend.len() - divisor.len() + 1];
-    let mut remainder_coeffs = Vec::from(dividend);
+    let mut quotient = vec![Scalar::zero(); dividend.len() - divisor.len() + 1];
+    let mut remainder = Vec::from(dividend);
 
-    for i in (0..quotient_coeffs.len()).rev() {
-        quotient_coeffs[i] = (remainder_coeffs[i + divisor.len() - 1]
-            / *divisor.last().ok_or(FastCryptoError::InvalidInput)?)?;
+    let divisor_leading_term_inverse = divisor
+        .last()
+        .ok_or(FastCryptoError::InvalidInput)?
+        .inverse()?;
+
+    for i in (0..quotient.len()).rev() {
+        quotient[i] = remainder[i + divisor.len() - 1] * divisor_leading_term_inverse;
         for j in 0..divisor.len() {
-            remainder_coeffs[i + j] -= quotient_coeffs[i] * divisor[j];
+            remainder[i + j] -= quotient[i] * divisor[j];
         }
     }
 
     // Remove leading zeros in the remainder
-    while remainder_coeffs.len() > 1 && remainder_coeffs.last().unwrap() == &Scalar::zero() {
-        remainder_coeffs.pop();
+    while remainder.len() > 1 && remainder.last().unwrap() == &Scalar::zero() {
+        remainder.pop();
     }
 
-    Ok((quotient_coeffs, remainder_coeffs))
+    Ok((quotient, remainder))
 }
 
 pub struct KZGOriginal {
