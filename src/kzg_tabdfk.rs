@@ -163,8 +163,12 @@ impl KZG for KZGTabDFK {
         lhs_pairing == rhs_pairing
     }
 
-    fn update(&self, commitment: &mut G1Element, index: usize, new_v_i: &Scalar) -> G1Element {
-        *commitment
+    fn update(&self, commitment: &mut G1Element, index: usize, old_v_i: &Scalar, new_v_i: &Scalar) -> G1Element {
+        *commitment + self.l_vec[index].mul(new_v_i - old_v_i)
+    }
+
+    fn update_open_i(&self, open: &mut G1Element, index: usize, old_v_i: &Scalar, new_v_i: &Scalar) -> G1Element{
+        *open + self.u_vec[index].mul(new_v_i - old_v_i)
     }
 }
 
@@ -202,5 +206,44 @@ mod tests {
 
         // Assert that the verification passes
         assert!(is_valid, "Verification of the opening should succeed.");
+    }
+
+    #[test]
+    fn test_kzg_commit_open_update_verify(){
+        let mut rng = rand::thread_rng();
+
+        // Create a new KZGTabDFK struct
+        let n = 8;
+        let kzg = KZGTabDFK::new(n).unwrap();
+
+        // Create a random vector v
+        let v: Vec<Scalar> = (0..n).map(|_| OtherScalar::rand(&mut rng)).collect();
+
+        println!("{:?}", v);
+
+        // Create a commitment
+        let mut commitment = kzg.commit(&v);
+
+        // Pick a random index to open
+        let index = rng.gen_range(0..n);
+
+        // Create an opening
+        let mut open_value = kzg.open(&v, index);
+
+        // Set a new valie for v_i
+        let new_v_index = Scalar::rand(&mut rng);
+
+        //Update the commitment
+        let mut new_commitment = kzg.update(&mut commitment, index, &v[index], &new_v_index);
+
+        //Update the opening
+        let mut new_opening = kzg.update_open_i(&mut open_value, index, &v[index],&new_v_index);
+
+
+        //Verify the updated opening
+        let is_valid = kzg.verify(index, &new_v_index, &new_commitment, &new_opening);
+
+        // Assert that the verification passes
+        assert!(is_valid, "Verification of the opening after updating should succeed.");
     }
 }
