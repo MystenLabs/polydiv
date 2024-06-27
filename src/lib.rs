@@ -34,4 +34,12 @@ pub trait KZG {
         old_v_i: &<Self::G as GroupElement>::ScalarType,
         new_v_i: &<Self::G as GroupElement>::ScalarType,
     ) -> Self::G;
+    fn update_open_j(
+        &self,
+        open: &mut Self::G,
+        index: usize,
+        index_j: usize,
+        old_v_j: &<Self::G as GroupElement>::ScalarType,
+        new_v_j: &<Self::G as GroupElement>::ScalarType,
+    ) -> Self::G;
 }

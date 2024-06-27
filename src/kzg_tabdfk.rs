@@ -170,6 +170,23 @@ impl KZG for KZGTabDFK {
     fn update_open_i(&self, open: &mut G1Element, index: usize, old_v_i: &Scalar, new_v_i: &Scalar) -> G1Element{
         *open + self.u_vec[index].mul(new_v_i - old_v_i)
     }
+
+    fn update_open_j(&self, open: &mut G1Element, index: usize, index_j:usize, old_v_j: &Scalar,  new_v_j: &Scalar) -> G1Element{
+        let omega_i = self.domain.element(index);
+        let omega_j = self.domain.element(index_j);
+
+        // Compute c_i and c_j
+        let c_i = (omega_i - omega_j).inverse().unwrap();
+        let c_j = (omega_j - omega_i).inverse().unwrap();
+
+        // Compute w_ij = a_i^c_i * a_j^c_j
+        let w_ij = self.a_vec[index].mul(c_i) + self.a_vec[index_j].mul(c_j);
+
+        // Compute u_ij = w_ij^{omega_j / n}
+        let omega_j_n = (omega_j / Scalar::from(self.tau_powers_g1.len() as u128)).unwrap();
+        let u_ij = w_ij.mul(omega_j_n);
+        *open + u_ij.mul(new_v_j - old_v_j)
+    }
 }
 
 #[cfg(test)]
@@ -209,7 +226,7 @@ mod tests {
     }
 
     #[test]
-    fn test_kzg_commit_open_update_verify(){
+    fn test_kzg_commit_open_update_i_verify(){
         let mut rng = rand::thread_rng();
 
         // Create a new KZGTabDFK struct
@@ -245,5 +262,49 @@ mod tests {
 
         // Assert that the verification passes
         assert!(is_valid, "Verification of the opening after updating should succeed.");
+    }
+
+    #[test]
+    fn test_kzg_commit_open_update_j_verify(){
+        let mut rng = rand::thread_rng();
+
+        // Create a new KZGTabDFK struct
+        let n = 8;
+        let kzg = KZGTabDFK::new(n).unwrap();
+
+        // Create a random vector v
+        let v: Vec<Scalar> = (0..n).map(|_| OtherScalar::rand(&mut rng)).collect();
+
+        println!("{:?}", v);
+
+        // Create a commitment
+        let mut commitment = kzg.commit(&v);
+
+        // Pick a random index to open
+        let index = rng.gen_range(0..n);
+
+        // Create an opening
+        let mut open_value = kzg.open(&v, index);
+
+        // Pick a new index to update
+
+        let index_j = rng.gen_range(0..n);
+
+
+        // Set a new value for v_i
+        let new_v_index_j = Scalar::rand(&mut rng);
+
+        //Update the commitment
+        let mut new_commitment = kzg.update(&mut commitment, index_j, &v[index_j], &new_v_index_j);
+
+        //Update the opening
+        let mut new_opening = kzg.update_open_j(&mut open_value, index, index_j, &v[index_j],&new_v_index_j);
+
+
+        //Verify the updated opening
+        let is_valid = kzg.verify(index, &v[index], &new_commitment, &new_opening);
+
+        // Assert that the verification passes
+        assert!(is_valid, "Verification of the opening after updating j's value should succeed.");
     }
 }
