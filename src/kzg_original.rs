@@ -23,11 +23,11 @@ fn polynomial_division(
     let mut quotient: Vec<Scalar> = (0..quotient_size)
         .rev()
         .map(|i| {
-            let q = remainder[i + divisor.len() - 1] * divisor_leading_term_inverse;
+            let q_i = remainder[i + divisor.len() - 1] * divisor_leading_term_inverse;
             for j in 0..divisor.len() {
-                remainder[i + j] -= q * divisor[j];
+                remainder[i + j] -= q_i * divisor[j];
             }
-            q
+            q_i
         })
         .collect();
     quotient.reverse();
