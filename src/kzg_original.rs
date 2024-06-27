@@ -11,7 +11,6 @@ fn polynomial_division(
     dividend: &[Scalar],
     divisor: &[Scalar],
 ) -> FastCryptoResult<(Vec<Scalar>, Vec<Scalar>)> {
-    let mut quotient = vec![Scalar::zero(); dividend.len() - divisor.len() + 1];
     let mut remainder = Vec::from(dividend);
 
     let divisor_leading_term_inverse = divisor
@@ -19,12 +18,19 @@ fn polynomial_division(
         .ok_or(FastCryptoError::InvalidInput)?
         .inverse()?;
 
-    for i in (0..quotient.len()).rev() {
-        quotient[i] = remainder[i + divisor.len() - 1] * divisor_leading_term_inverse;
-        for j in 0..divisor.len() {
-            remainder[i + j] -= quotient[i] * divisor[j];
-        }
-    }
+    let quotient_size = dividend.len() - divisor.len() + 1;
+
+    let mut quotient: Vec<Scalar> = (0..quotient_size)
+        .rev()
+        .map(|i| {
+            let q = remainder[i + divisor.len() - 1] * divisor_leading_term_inverse;
+            for j in 0..divisor.len() {
+                remainder[i + j] -= q * divisor[j];
+            }
+            q
+        })
+        .collect();
+    quotient.reverse();
 
     // Remove leading zeros in the remainder
     while remainder.len() > 1 && remainder.last().unwrap() == &Scalar::zero() {
