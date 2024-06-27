@@ -13,6 +13,7 @@ pub struct KZGDeriv {
     tau_powers_g1: Vec<G1Element>,
     tau_powers_g2: Vec<G2Element>,
     w_vec: Vec<G1Element>,
+    u_vec: Vec<G1Element>,
 }
 
 impl KZGDeriv {
@@ -50,6 +51,17 @@ impl KZGDeriv {
             let w_i = num * denom.inverse().unwrap();
             w_vec[i] = G1Element::generator().mul(w_i);
         }
+
+         //Compute u_i = g^{(L_i(tau) - 1)/(tau-omega^i)}
+         let mut u_vec = vec![G1Element::zero(); n];
+         for i in 0..n {
+             let omega_i = domain.element(i);
+             let l_i = w_vec[i];
+             let l_i_minus_1 = l_i - tau_powers_g1[0];
+             let denom = tau - omega_i;
+             let u_i = l_i_minus_1.mul(denom.inverse().unwrap());
+             u_vec[i] = u_i;
+         }
         
 
         Ok(Self {
@@ -57,6 +69,7 @@ impl KZGDeriv {
             tau_powers_g1,
             tau_powers_g2,
             w_vec,
+            u_vec,
         })
     }
 }
@@ -138,15 +151,22 @@ impl KZG for KZGDeriv {
     }
 
     fn update(&self, commitment: &mut G1Element, index: usize,old_v_i: &Scalar,  new_v_i: &Scalar) -> G1Element {
-        *commitment
+        *commitment + self.w_vec[index].mul(new_v_i - old_v_i)
     }
 
     fn update_open_i(&self, open: &mut G1Element, index: usize, old_v_i: &Scalar, new_v_i: &Scalar) -> G1Element{
-        *open
+        *open + self.u_vec[index].mul(new_v_i - old_v_i)
     }
 
     fn update_open_j(&self, open: &mut G1Element, index: usize, index_j:usize, old_v_j: &Scalar,  new_v_j: &Scalar) -> G1Element{
-        *open
+        let omega_i = self.domain.element(index);
+        let omega_j = self.domain.element(index_j);
+        let to_mul_1 = (new_v_j - old_v_j)/(omega_j - omega_i);
+        let omega_j_minus_i = (omega_j/omega_i).unwrap();
+        let to_mul = (omega_j_minus_i)/(omega_i - omega_j);
+        let to_mul_2 = (new_v_j - old_v_j)*to_mul.unwrap();
+
+        *open + self.w_vec[index_j].mul(to_mul_1.unwrap()) + self.w_vec[index].mul(to_mul_2)
     }
 }
 
@@ -184,5 +204,88 @@ mod tests {
 
         // Assert that the verification passes
         assert!(is_valid, "Verification of the opening should succeed.");
+    }
+
+    #[test]
+    fn test_kzg_commit_open_update_i_verify(){
+        let mut rng = rand::thread_rng();
+
+        // Create a new KZGDeriv struct
+        let n = 8;
+        let kzg = KZGDeriv::new(n).unwrap();
+
+        // Create a random vector v
+        let v: Vec<Scalar> = (0..n).map(|_| OtherScalar::rand(&mut rng)).collect();
+
+        println!("{:?}", v);
+
+        // Create a commitment
+        let mut commitment = kzg.commit(&v);
+
+        // Pick a random index to open
+        let index = rng.gen_range(0..n);
+
+        // Create an opening
+        let mut open_value = kzg.open(&v, index);
+
+        // Set a new valie for v_i
+        let new_v_index = Scalar::rand(&mut rng);
+
+        //Update the commitment
+        let mut new_commitment = kzg.update(&mut commitment, index, &v[index], &new_v_index);
+
+        //Update the opening
+        let mut new_opening = kzg.update_open_i(&mut open_value, index, &v[index],&new_v_index);
+
+
+        //Verify the updated opening
+        let is_valid = kzg.verify(index, &new_v_index, &new_commitment, &new_opening);
+
+        // Assert that the verification passes
+        assert!(is_valid, "Verification of the opening after updating should succeed.");
+    }
+
+    #[test]
+    fn test_kzg_commit_open_update_j_verify(){
+        let mut rng = rand::thread_rng();
+
+        // Create a new KZGDeriv struct
+        let n = 8;
+        let kzg = KZGDeriv::new(n).unwrap();
+
+        // Create a random vector v
+        let v: Vec<Scalar> = (0..n).map(|_| OtherScalar::rand(&mut rng)).collect();
+
+        println!("{:?}", v);
+
+        // Create a commitment
+        let mut commitment = kzg.commit(&v);
+
+        // Pick a random index to open
+        let index = rng.gen_range(0..n);
+
+        // Create an opening
+        let mut open_value = kzg.open(&v, index);
+
+        // Pick a new index to update
+
+        let index_j = rng.gen_range(0..n);
+
+
+        // Set a new value for v_i
+        let new_v_index_j = Scalar::rand(&mut rng);
+
+        //Update the commitment
+        let mut new_commitment = kzg.update(&mut commitment, index_j, &v[index_j], &new_v_index_j);
+
+        //Update the opening
+        let mut new_opening = kzg.update_open_j(&mut open_value, index, index_j, &v[index_j],&new_v_index_j);
+
+
+        //Verify the updated opening
+        let is_valid = kzg.verify(index, &v[index], &new_commitment, &new_opening);
+
+        // Assert that the verification passes
+        assert!(is_valid, "Verification of the opening after updating j's value should succeed.");
     }
 }
