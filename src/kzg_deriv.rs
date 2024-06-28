@@ -32,12 +32,9 @@ impl KZGDeriv {
             .take(n)
             .collect();
 
-        // Compute w_vec
-
-        //Compute u_i = g^{(L_i(tau) - 1)/(tau-omega^i)}
+        // Compute w_vec and u_i = g^{(L_i(tau) - 1)/(tau-omega^i)}
 
         let mut omega_i = Scalar::generator();
-
         let (w_vec, u_vec) = (0..n)
             .map(|i| {
                 let mut num = Scalar::from(1u128);
@@ -87,7 +84,7 @@ impl KZG for KZGDeriv {
     }
 
     fn open(&self, v: &[Scalar], index: usize) -> G1Element {
-        let mut to_mul = vec![Scalar::zero(); v.len()];
+        let mut scalars = vec![Scalar::zero(); v.len()];
         let mut v_prime = Scalar::zero();
 
         // Intialize omega_j = 1 and omega_j_minus_i = omega_i^-1
@@ -100,7 +97,7 @@ impl KZG for KZGDeriv {
             if j != index {
                 let diff_inverse = (omega_i - omega_j).inverse().unwrap();
                 v_prime += v[j] * omega_j_minus_i * diff_inverse;
-                to_mul[j] = (v[index] - v[j]) * diff_inverse;
+                scalars[j] = (v[index] - v[j]) * diff_inverse;
             } else {
                 v_prime += v[j]
                     * (Scalar::from((v.len() - 1) as u128) / (Scalar::from(2u128) * omega_i))
@@ -113,9 +110,9 @@ impl KZG for KZGDeriv {
             }
         }
 
-        to_mul[index] = v_prime;
+        scalars[index] = v_prime;
 
-        G1Element::multi_scalar_mul(&to_mul, &self.w_vec[..to_mul.len()]).unwrap()
+        G1Element::multi_scalar_mul(&scalars, &self.w_vec[..scalars.len()]).unwrap()
     }
 
     fn verify(
@@ -126,14 +123,10 @@ impl KZG for KZGDeriv {
         open_i: &G1Element,
     ) -> bool {
         let lhs = *commitment - self.tau_powers_g1[0] * v_i;
-
         let rhs = self.tau_powers_g2[1] - self.tau_powers_g2[0] * self.domain.element(index);
 
-        // Perform the pairing check e(lhs, g) == e(open_i, rhs)
-        let lhs_pairing = lhs.pairing(&self.tau_powers_g2[0]);
-        let rhs_pairing = open_i.pairing(&rhs);
-
-        lhs_pairing == rhs_pairing
+        // Perform the pairing check
+        lhs.pairing(&self.tau_powers_g2[0]) == open_i.pairing(&rhs)
     }
 
     fn update(
@@ -164,7 +157,7 @@ impl KZG for KZGDeriv {
         old_v_j: &Scalar,
         new_v_j: &Scalar,
     ) -> G1Element {
-        assert_ne!(index, index_j, "Index and index_j should be different.");
+        assert_ne!(index, index_j, "index and index_j should be different.");
 
         let omega_i = self.domain.element(index);
         let omega_j = self.domain.element(index_j);
