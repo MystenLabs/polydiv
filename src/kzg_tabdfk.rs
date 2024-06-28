@@ -101,7 +101,7 @@ impl KZG for KZGTabDFK {
     }
 
     fn open(&self, v: &[Scalar], index: usize) -> G1Element {
-        let mut uij_vec = vec![G1Element::zero(); v.len()];
+        let mut open = G1Element::zero();
         for j in 0..v.len() {
             if j != index {
                 let omega_i = self.domain.element(index);
@@ -118,27 +118,11 @@ impl KZG for KZGTabDFK {
                 let omega_j_n = (omega_j / Scalar::from(v.len() as u128)).unwrap();
                 let u_ij = w_ij.mul(omega_j_n);
 
-                uij_vec[j] = u_ij;
+                open += u_ij.mul(v[j]);
             }
-            uij_vec[index] = self.u_vec[index];
         }
-        let mut open = G1Element::zero();
-
-        for (v_i, uij_i) in v.iter().zip(uij_vec.iter()) {
-            open += uij_i.mul(*v_i);
-        }
-
+        open += self.u_vec[index].mul(v[index]);
         open
-        // G1Element::multi_scalar_mul(&v, &uij_vec[..v.len()]).unwrap()
-        // let mut poly = self.domain.ifft(&v);
-        // let mut quotient_coeffs: Vec<Scalar> = vec![Scalar::zero(); poly.len()-1];
-
-        // quotient_coeffs[poly.len() - 2] = poly[poly.len() - 1];
-
-        // for j in (0..poly.len() - 2).rev() {
-        //     quotient_coeffs[j] = poly[j + 1] + quotient_coeffs[j + 1] * self.domain.element(index);
-        // }
-        // G1Element::multi_scalar_mul(&quotient_coeffs, &self.tau_powers_g1[..quotient_coeffs.len()]).unwrap()
     }
 
     fn verify(
