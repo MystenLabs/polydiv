@@ -21,7 +21,11 @@ pub struct KZGDeriv {
 
 impl KZGDeriv {
     fn element(&self, index: usize) -> Scalar {
-        if index == 0 {
+        // Compute omega^index recursively
+
+        if index > self.n {
+            return self.element(index & self.n);
+        } else if index == 0 {
             return Scalar::generator();
         } else if index == 1 {
             return self.omega;
