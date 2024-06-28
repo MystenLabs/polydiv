@@ -7,7 +7,6 @@ use std::ops::Mul;
 use crate::fft::{BLS12381Domain, FFTDomain};
 use crate::KZG;
 
-
 pub struct KZGFK {
     domain: BLS12381Domain,
     tau_powers_g1: Vec<G1Element>,
@@ -50,7 +49,7 @@ impl KZG for KZGFK {
 
     fn open(&self, v: &[Scalar], index: usize) -> G1Element {
         let mut poly = self.domain.ifft(&v);
-        let mut quotient_coeffs: Vec<Scalar> = vec![Scalar::zero(); poly.len()-1];
+        let mut quotient_coeffs: Vec<Scalar> = vec![Scalar::zero(); poly.len() - 1];
 
         quotient_coeffs[poly.len() - 2] = poly[poly.len() - 1];
 
@@ -58,7 +57,11 @@ impl KZG for KZGFK {
             quotient_coeffs[j] = poly[j + 1] + quotient_coeffs[j + 1] * self.domain.element(index);
         }
 
-        G1Element::multi_scalar_mul(&quotient_coeffs, &self.tau_powers_g1[..quotient_coeffs.len()]).unwrap()
+        G1Element::multi_scalar_mul(
+            &quotient_coeffs,
+            &self.tau_powers_g1[..quotient_coeffs.len()],
+        )
+        .unwrap()
         // let mut open_value = G1Element::zero();
         // for (i, coeff) in quotient_coeffs.iter().enumerate() {
         //     open_value += self.tau_powers_g1[i].mul(*coeff);
@@ -88,17 +91,30 @@ impl KZG for KZGFK {
         &self,
         commitment: &mut G1Element,
         index: usize,
-        old_v_i: &Scalar, 
-        new_v_i: &Scalar
+        old_v_i: &Scalar,
+        new_v_i: &Scalar,
     ) -> G1Element {
         *commitment
     }
 
-    fn update_open_i(&self, open: &mut G1Element, index: usize, old_v_i: &Scalar, new_v_i: &Scalar) -> G1Element{
+    fn update_open_i(
+        &self,
+        open: &mut G1Element,
+        index: usize,
+        old_v_i: &Scalar,
+        new_v_i: &Scalar,
+    ) -> G1Element {
         *open
     }
 
-    fn update_open_j(&self, open: &mut G1Element, index: usize, index_j:usize, old_v_j: &Scalar,  new_v_j: &Scalar) -> G1Element{
+    fn update_open_j(
+        &self,
+        open: &mut G1Element,
+        index: usize,
+        index_j: usize,
+        old_v_j: &Scalar,
+        new_v_j: &Scalar,
+    ) -> G1Element {
         *open
     }
 }

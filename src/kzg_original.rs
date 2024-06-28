@@ -108,15 +108,34 @@ impl KZG for KZGOriginal {
         lhs_pairing == rhs_pairing
     }
 
-    fn update(&self, commitment: &mut G1Element, index: usize,old_v_i: &Scalar,  new_v_i: &Scalar) -> G1Element {
+    fn update(
+        &self,
+        commitment: &mut G1Element,
+        index: usize,
+        old_v_i: &Scalar,
+        new_v_i: &Scalar,
+    ) -> G1Element {
         *commitment
     }
 
-    fn update_open_i(&self, open: &mut G1Element, index: usize, old_v_i: &Scalar, new_v_i: &Scalar) -> G1Element{
+    fn update_open_i(
+        &self,
+        open: &mut G1Element,
+        index: usize,
+        old_v_i: &Scalar,
+        new_v_i: &Scalar,
+    ) -> G1Element {
         *open
     }
 
-    fn update_open_j(&self, open: &mut G1Element, index: usize, index_j:usize, old_v_j: &Scalar,  new_v_j: &Scalar) -> G1Element{
+    fn update_open_j(
+        &self,
+        open: &mut G1Element,
+        index: usize,
+        index_j: usize,
+        old_v_j: &Scalar,
+        new_v_j: &Scalar,
+    ) -> G1Element {
         *open
     }
 }

@@ -7,7 +7,6 @@ use std::ops::Mul;
 use crate::fft::{BLS12381Domain, FFTDomain};
 use crate::KZG;
 
-
 pub struct KZGDeriv {
     domain: BLS12381Domain,
     tau_powers_g1: Vec<G1Element>,
@@ -32,37 +31,42 @@ impl KZGDeriv {
         let tau_powers_g2: Vec<G2Element> = itertools::iterate(G2Element::generator(), |g| g * tau)
             .take(n)
             .collect();
-        
-        // Compute w_vec 
-        let mut w_vec = vec![G1Element::zero(); n];
-        for i in 0..n {
-            let mut num = Scalar::from(1u128);
-            let mut denom = Scalar::from(1u128);
-            let omega_i = domain.element(i);
 
-            for j in 0..n {
-                if i != j {
-                    let omega_j = domain.element(j);
-                    num *= tau - omega_j;
-                    denom *= omega_i - omega_j;
+        // Compute w_vec
+
+        //Compute u_i = g^{(L_i(tau) - 1)/(tau-omega^i)}
+
+        let mut omega_i = Scalar::generator();
+
+        let (w_vec, u_vec) = (0..n)
+            .map(|i| {
+                let mut num = Scalar::from(1u128);
+                let mut denom = Scalar::from(1u128);
+
+                let mut omega_j = domain.element(0);
+
+                for j in 0..n {
+                    if i != j {
+                        num *= tau - omega_j;
+                        denom *= omega_i - omega_j;
+                    }
+                    if j < n - 1 {
+                        omega_j *= domain.element(1);
+                    }
                 }
-            }
+                let w_i = G1Element::generator() * num * denom.inverse().unwrap();
 
-            let w_i = num * denom.inverse().unwrap();
-            w_vec[i] = G1Element::generator().mul(w_i);
-        }
+                let l_i_minus_1 = w_i - tau_powers_g1[0];
+                let denom = tau - omega_i;
+                let u_i = (l_i_minus_1 / denom).unwrap();
 
-         //Compute u_i = g^{(L_i(tau) - 1)/(tau-omega^i)}
-         let mut u_vec = vec![G1Element::zero(); n];
-         for i in 0..n {
-             let omega_i = domain.element(i);
-             let l_i = w_vec[i];
-             let l_i_minus_1 = l_i - tau_powers_g1[0];
-             let denom = tau - omega_i;
-             let u_i = l_i_minus_1.mul(denom.inverse().unwrap());
-             u_vec[i] = u_i;
-         }
-        
+                if i < n - 1 {
+                    omega_i *= domain.element(1);
+                }
+
+                (w_i, u_i)
+            })
+            .collect();
 
         Ok(Self {
             domain,
@@ -83,50 +87,32 @@ impl KZG for KZGDeriv {
     }
 
     fn open(&self, v: &[Scalar], index: usize) -> G1Element {
-        // let mut poly = self.domain.ifft(&v);
-        // poly[0] -= &v[index];
-
-        // let divisor = [-self.domain.element(index), Scalar::generator()];
-        // let (quotient, _) = polynomial_division(&poly, &divisor).unwrap();
-
-        let mut e_vec = vec![Scalar::zero(); v.len()];
-        for j in (0..v.len()){
-            if j!=index{
-                let omega_i = self.domain.element(index);
-                let omega_j = self.domain.element(j);
-                let omega_j_minus_i = (omega_j/omega_i).unwrap();
-                e_vec[j] = (omega_j_minus_i/(omega_i - omega_j)).unwrap();
-            }
-            let omega_i = self.domain.element(index);
-            e_vec[index] = (Scalar::from((v.len() -1) as u128)/(Scalar::from(2u128)*omega_i)).unwrap();
-        }
-
         let mut to_mul = vec![Scalar::zero(); v.len()];
-        // to_mul[index] = e_vec[index]*v[index];
-        // for j in (0..v.len()){
-        //     if j!=index{
-        //         let omega_i = self.domain.element(index);
-        //         let omega_j = self.domain.element(j);
-        //         let to_add = (v[j]-v[index])/(omega_j - omega_i);
-        //         to_mul[j] = e_vec[j]*v[j]+to_add.unwrap();
-        //     }
-            
-        // }
         let mut v_prime = Scalar::zero();
-    
-        for (v_i, e_i) in v.iter().zip(e_vec.iter()) {
-        v_prime += v_i*e_i;
-        }
-    
-        
-        for j in (0..v.len()){
-            if j!=index{
-                let omega_i = self.domain.element(index);
-                let omega_j = self.domain.element(j);
-                let to_mul_j = (v[j]-v[index])/(omega_j - omega_i);
-                to_mul[j] = to_mul_j.unwrap();
+
+        // Intialize omega_j = 1 and omega_j_minus_i = omega_i^-1
+        let omega_i = self.domain.element(index);
+        let mut omega_j = Scalar::generator();
+        let mut omega_j_minus_i = self.domain.element(self.domain.size() - index);
+        let omega = self.domain.element(1);
+
+        for j in (0..v.len()) {
+            if j != index {
+                let diff_inverse = (omega_i - omega_j).inverse().unwrap();
+                v_prime += v[j] * omega_j_minus_i * diff_inverse;
+                to_mul[j] = (v[index] - v[j]) * diff_inverse;
+            } else {
+                v_prime += v[j]
+                    * (Scalar::from((v.len() - 1) as u128) / (Scalar::from(2u128) * omega_i))
+                        .unwrap();
+            }
+
+            if j < v.len() - 1 {
+                omega_j *= omega;
+                omega_j_minus_i *= omega;
             }
         }
+
         to_mul[index] = v_prime;
 
         G1Element::multi_scalar_mul(&to_mul, &self.w_vec[..to_mul.len()]).unwrap()
@@ -150,23 +136,49 @@ impl KZG for KZGDeriv {
         lhs_pairing == rhs_pairing
     }
 
-    fn update(&self, commitment: &mut G1Element, index: usize,old_v_i: &Scalar,  new_v_i: &Scalar) -> G1Element {
+    fn update(
+        &self,
+        commitment: &mut G1Element,
+        index: usize,
+        old_v_i: &Scalar,
+        new_v_i: &Scalar,
+    ) -> G1Element {
         *commitment + self.w_vec[index].mul(new_v_i - old_v_i)
     }
 
-    fn update_open_i(&self, open: &mut G1Element, index: usize, old_v_i: &Scalar, new_v_i: &Scalar) -> G1Element{
+    fn update_open_i(
+        &self,
+        open: &mut G1Element,
+        index: usize,
+        old_v_i: &Scalar,
+        new_v_i: &Scalar,
+    ) -> G1Element {
         *open + self.u_vec[index].mul(new_v_i - old_v_i)
     }
 
-    fn update_open_j(&self, open: &mut G1Element, index: usize, index_j:usize, old_v_j: &Scalar,  new_v_j: &Scalar) -> G1Element{
+    fn update_open_j(
+        &self,
+        open: &mut G1Element,
+        index: usize,
+        index_j: usize,
+        old_v_j: &Scalar,
+        new_v_j: &Scalar,
+    ) -> G1Element {
+        assert_ne!(index, index_j, "Index and index_j should be different.");
+
         let omega_i = self.domain.element(index);
         let omega_j = self.domain.element(index_j);
-        let to_mul_1 = (new_v_j - old_v_j)/(omega_j - omega_i);
-        let omega_j_minus_i = (omega_j/omega_i).unwrap();
-        let to_mul = (omega_j_minus_i)/(omega_i - omega_j);
-        let to_mul_2 = (new_v_j - old_v_j)*to_mul.unwrap();
+        let omega_i_inverse = self.domain.element(self.domain.size() - index);
 
-        *open + self.w_vec[index_j].mul(to_mul_1.unwrap()) + self.w_vec[index].mul(to_mul_2)
+        let to_mul_1 = (old_v_j - new_v_j) * (omega_i - omega_j).inverse().unwrap();
+        let to_mul_2 = -to_mul_1 * omega_j * omega_i_inverse;
+
+        *open
+            + G1Element::multi_scalar_mul(
+                &[to_mul_1, to_mul_2],
+                &[self.w_vec[index_j], self.w_vec[index]],
+            )
+            .unwrap()
     }
 }
 
@@ -207,7 +219,7 @@ mod tests {
     }
 
     #[test]
-    fn test_kzg_commit_open_update_i_verify(){
+    fn test_kzg_commit_open_update_i_verify() {
         let mut rng = rand::thread_rng();
 
         // Create a new KZGDeriv struct
@@ -235,18 +247,20 @@ mod tests {
         let mut new_commitment = kzg.update(&mut commitment, index, &v[index], &new_v_index);
 
         //Update the opening
-        let mut new_opening = kzg.update_open_i(&mut open_value, index, &v[index],&new_v_index);
-
+        let mut new_opening = kzg.update_open_i(&mut open_value, index, &v[index], &new_v_index);
 
         //Verify the updated opening
         let is_valid = kzg.verify(index, &new_v_index, &new_commitment, &new_opening);
 
         // Assert that the verification passes
-        assert!(is_valid, "Verification of the opening after updating should succeed.");
+        assert!(
+            is_valid,
+            "Verification of the opening after updating should succeed."
+        );
     }
 
     #[test]
-    fn test_kzg_commit_open_update_j_verify(){
+    fn test_kzg_commit_open_update_j_verify() {
         let mut rng = rand::thread_rng();
 
         // Create a new KZGDeriv struct
@@ -271,7 +285,6 @@ mod tests {
 
         let index_j = rng.gen_range(0..n);
 
-
         // Set a new value for v_i
         let new_v_index_j = Scalar::rand(&mut rng);
 
@@ -279,13 +292,16 @@ mod tests {
         let mut new_commitment = kzg.update(&mut commitment, index_j, &v[index_j], &new_v_index_j);
 
         //Update the opening
-        let mut new_opening = kzg.update_open_j(&mut open_value, index, index_j, &v[index_j],&new_v_index_j);
-
+        let mut new_opening =
+            kzg.update_open_j(&mut open_value, index, index_j, &v[index_j], &new_v_index_j);
 
         //Verify the updated opening
         let is_valid = kzg.verify(index, &v[index], &new_commitment, &new_opening);
 
         // Assert that the verification passes
-        assert!(is_valid, "Verification of the opening after updating j's value should succeed.");
+        assert!(
+            is_valid,
+            "Verification of the opening after updating j's value should succeed."
+        );
     }
 }

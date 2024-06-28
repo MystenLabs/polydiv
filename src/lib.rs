@@ -2,10 +2,10 @@
 
 use fastcrypto::groups::GroupElement;
 
+pub mod kzg_deriv;
 pub mod kzg_fk;
 pub mod kzg_original;
 pub mod kzg_tabdfk;
-pub mod kzg_deriv;
 
 pub mod fft;
 

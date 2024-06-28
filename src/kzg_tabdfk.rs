@@ -7,15 +7,14 @@ use std::ops::Mul;
 use crate::fft::{BLS12381Domain, FFTDomain};
 use crate::KZG;
 
-
 pub struct KZGTabDFK {
     domain: BLS12381Domain,
     tau_powers_g1: Vec<G1Element>,
     tau_powers_g2: Vec<G2Element>,
-    a:G1Element, 
-    u_vec:Vec<G1Element>,
-    l_vec:Vec<G1Element>,
-    a_vec:Vec<G1Element>,
+    a: G1Element,
+    u_vec: Vec<G1Element>,
+    l_vec: Vec<G1Element>,
+    a_vec: Vec<G1Element>,
 }
 
 impl KZGTabDFK {
@@ -34,7 +33,7 @@ impl KZGTabDFK {
         let tau_powers_g2: Vec<G2Element> = itertools::iterate(G2Element::generator(), |g| g * tau)
             .take(n)
             .collect();
-        
+
         //Compute a = g^{A(tau)} where A = X^n-1
         let g_tau_n = tau_powers_g1[n - 1].mul(tau); // g^{tau^n}
         let g = G1Element::generator();
@@ -80,7 +79,6 @@ impl KZGTabDFK {
             u_vec[i] = u_i;
         }
 
-
         Ok(Self {
             domain,
             tau_powers_g1,
@@ -99,13 +97,12 @@ impl KZG for KZGTabDFK {
 
     fn commit(&self, v: &[Scalar]) -> G1Element {
         G1Element::multi_scalar_mul(&v, &self.l_vec).unwrap()
-
     }
 
     fn open(&self, v: &[Scalar], index: usize) -> G1Element {
         let mut uij_vec = vec![G1Element::zero(); v.len()];
-        for j in (0..v.len()){
-            if j!=index{
+        for j in (0..v.len()) {
+            if j != index {
                 let omega_i = self.domain.element(index);
                 let omega_j = self.domain.element(j);
 
@@ -123,14 +120,13 @@ impl KZG for KZGTabDFK {
                 uij_vec[j] = u_ij;
             }
             uij_vec[index] = self.u_vec[index];
-
         }
         let mut open = G1Element::zero();
-    
+
         for (v_i, uij_i) in v.iter().zip(uij_vec.iter()) {
-        open += uij_i.mul(*v_i);
+            open += uij_i.mul(*v_i);
         }
-    
+
         open
         // G1Element::multi_scalar_mul(&v, &uij_vec[..v.len()]).unwrap()
         // let mut poly = self.domain.ifft(&v);
@@ -142,7 +138,6 @@ impl KZG for KZGTabDFK {
         //     quotient_coeffs[j] = poly[j + 1] + quotient_coeffs[j + 1] * self.domain.element(index);
         // }
         // G1Element::multi_scalar_mul(&quotient_coeffs, &self.tau_powers_g1[..quotient_coeffs.len()]).unwrap()
-
     }
 
     fn verify(
@@ -163,15 +158,34 @@ impl KZG for KZGTabDFK {
         lhs_pairing == rhs_pairing
     }
 
-    fn update(&self, commitment: &mut G1Element, index: usize, old_v_i: &Scalar, new_v_i: &Scalar) -> G1Element {
+    fn update(
+        &self,
+        commitment: &mut G1Element,
+        index: usize,
+        old_v_i: &Scalar,
+        new_v_i: &Scalar,
+    ) -> G1Element {
         *commitment + self.l_vec[index].mul(new_v_i - old_v_i)
     }
 
-    fn update_open_i(&self, open: &mut G1Element, index: usize, old_v_i: &Scalar, new_v_i: &Scalar) -> G1Element{
+    fn update_open_i(
+        &self,
+        open: &mut G1Element,
+        index: usize,
+        old_v_i: &Scalar,
+        new_v_i: &Scalar,
+    ) -> G1Element {
         *open + self.u_vec[index].mul(new_v_i - old_v_i)
     }
 
-    fn update_open_j(&self, open: &mut G1Element, index: usize, index_j:usize, old_v_j: &Scalar,  new_v_j: &Scalar) -> G1Element{
+    fn update_open_j(
+        &self,
+        open: &mut G1Element,
+        index: usize,
+        index_j: usize,
+        old_v_j: &Scalar,
+        new_v_j: &Scalar,
+    ) -> G1Element {
         let omega_i = self.domain.element(index);
         let omega_j = self.domain.element(index_j);
 
@@ -226,7 +240,7 @@ mod tests {
     }
 
     #[test]
-    fn test_kzg_commit_open_update_i_verify(){
+    fn test_kzg_commit_open_update_i_verify() {
         let mut rng = rand::thread_rng();
 
         // Create a new KZGTabDFK struct
@@ -254,18 +268,20 @@ mod tests {
         let mut new_commitment = kzg.update(&mut commitment, index, &v[index], &new_v_index);
 
         //Update the opening
-        let mut new_opening = kzg.update_open_i(&mut open_value, index, &v[index],&new_v_index);
-
+        let mut new_opening = kzg.update_open_i(&mut open_value, index, &v[index], &new_v_index);
 
         //Verify the updated opening
         let is_valid = kzg.verify(index, &new_v_index, &new_commitment, &new_opening);
 
         // Assert that the verification passes
-        assert!(is_valid, "Verification of the opening after updating should succeed.");
+        assert!(
+            is_valid,
+            "Verification of the opening after updating should succeed."
+        );
     }
 
     #[test]
-    fn test_kzg_commit_open_update_j_verify(){
+    fn test_kzg_commit_open_update_j_verify() {
         let mut rng = rand::thread_rng();
 
         // Create a new KZGTabDFK struct
@@ -290,7 +306,6 @@ mod tests {
 
         let index_j = rng.gen_range(0..n);
 
-
         // Set a new value for v_i
         let new_v_index_j = Scalar::rand(&mut rng);
 
@@ -298,13 +313,16 @@ mod tests {
         let mut new_commitment = kzg.update(&mut commitment, index_j, &v[index_j], &new_v_index_j);
 
         //Update the opening
-        let mut new_opening = kzg.update_open_j(&mut open_value, index, index_j, &v[index_j],&new_v_index_j);
-
+        let mut new_opening =
+            kzg.update_open_j(&mut open_value, index, index_j, &v[index_j], &new_v_index_j);
 
         //Verify the updated opening
         let is_valid = kzg.verify(index, &v[index], &new_commitment, &new_opening);
 
         // Assert that the verification passes
-        assert!(is_valid, "Verification of the opening after updating j's value should succeed.");
+        assert!(
+            is_valid,
+            "Verification of the opening after updating j's value should succeed."
+        );
     }
 }
