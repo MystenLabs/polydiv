@@ -1,6 +1,7 @@
 use fastcrypto::error::{FastCryptoError, FastCryptoResult};
 use fastcrypto::groups::bls12381::{G1Element, G2Element, Scalar};
 use fastcrypto::groups::{GroupElement, MultiScalarMul, Pairing, Scalar as OtherScalar};
+use fastcrypto::serde_helpers::ToFromByteArray;
 use rand::thread_rng;
 
 use crate::fft::{BLS12381Domain, FFTDomain};
@@ -43,7 +44,7 @@ fn polynomial_division(
 pub struct KZGOriginal {
     domain: BLS12381Domain,
     tau_powers_g1: Vec<G1Element>,
-    tau_powers_g2: Vec<G2Element>,
+    g2_tau: G2Element,
 }
 
 impl KZG for KZGOriginal {
@@ -61,21 +62,18 @@ impl KZG for KZGOriginal {
             .take(n)
             .collect();
 
-        // Compute g^tau^i for i = 0 to n-1 in G2
-        let tau_powers_g2: Vec<G2Element> = itertools::iterate(G2Element::generator(), |g| g * tau)
-            .take(n)
-            .collect();
+        let g2_tau = G2Element::generator() * tau;
 
         Ok(Self {
             domain,
             tau_powers_g1,
-            tau_powers_g2,
+            g2_tau,
         })
     }
 
     fn commit(&self, v: &[Scalar]) -> G1Element {
         let poly = self.domain.ifft(&v);
-        G1Element::multi_scalar_mul(&poly, &self.tau_powers_g1).unwrap()
+        G1Element::multi_scalar_mul(poly.as_slice(), &self.tau_powers_g1).unwrap()
     }
 
     fn open(&self, v: &[Scalar], index: usize) -> G1Element {
@@ -95,12 +93,12 @@ impl KZG for KZGOriginal {
         commitment: &G1Element,
         open_i: &G1Element,
     ) -> bool {
-        let lhs = *commitment - self.tau_powers_g1[0] * v_i;
+        let lhs = *commitment - G1Element::generator() * v_i;
 
-        let rhs = self.tau_powers_g2[1] - self.tau_powers_g2[0] * self.domain.element(index);
+        let rhs = self.g2_tau - G2Element::generator() * self.domain.element(index);
 
         // Perform the pairing check e(lhs, g) == e(open_i, rhs)
-        let lhs_pairing = lhs.pairing(&self.tau_powers_g2[0]);
+        let lhs_pairing = lhs.pairing(&G2Element::generator());
         let rhs_pairing = open_i.pairing(&rhs);
 
         lhs_pairing == rhs_pairing

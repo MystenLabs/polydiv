@@ -1,7 +1,11 @@
 // Declare the modules
 
+use crate::kzg_deriv::KZGDeriv;
+use crate::kzg_original::KZGOriginal;
 use fastcrypto::error::FastCryptoResult;
-use fastcrypto::groups::GroupElement;
+use fastcrypto::groups::bls12381::Scalar;
+use fastcrypto::groups::{GroupElement, Scalar as ScalarTrait};
+use rand::thread_rng;
 
 pub mod kzg_deriv;
 pub mod kzg_fk;
