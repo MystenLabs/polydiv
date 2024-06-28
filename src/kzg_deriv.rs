@@ -4,6 +4,7 @@ use fastcrypto::error::FastCryptoResult;
 use fastcrypto::groups::bls12381::{G1Element, G2Element, Scalar};
 use fastcrypto::groups::{GroupElement, MultiScalarMul, Pairing, Scalar as OtherScalar};
 use fastcrypto::serde_helpers::ToFromByteArray;
+use itertools::{iterate, Itertools};
 use rand::thread_rng;
 
 use crate::fft::{BLS12381Domain, FFTDomain};
@@ -28,27 +29,22 @@ impl KZG for KZGDeriv {
         let tau = Scalar::rand(&mut thread_rng());
         let g2_tau = G2Element::generator() * tau;
 
-        // Compute w_vec and u_i = g^{(L_i(tau) - 1)/(tau-omega^i)}
-        let mut omega_i = Scalar::generator();
-        let (w_vec, u_vec) = (0..n)
-            .map(|i| {
-                // Compute w_i
-                let mut num = Scalar::from(1u128);
-                let mut denom = Scalar::from(1u128);
-                let mut omega_j = domain.element(0);
-                for j in 0..n {
-                    if i != j {
-                        num *= tau - omega_j;
-                        denom *= omega_i - omega_j;
-                    }
-                    if j < n - 1 {
-                        omega_j *= domain.element(1);
-                    }
-                }
-                let w_i = G1Element::generator() * (num / denom).unwrap();
+        // Compute tau^i for i = 0 to n-1
+        let tau_powers_g1: Vec<Scalar> =
+            iterate(Scalar::generator(), |g| g * tau).take(n).collect();
 
+        // Compute w_vec and u_i = g^{(L_i(tau) - 1)/(tau-omega^i)}
+        let w_vec: Vec<G1Element> = domain
+            .ifft(&tau_powers_g1)
+            .iter()
+            .map(|s| G1Element::generator() * s)
+            .collect();
+
+        let mut omega_i = Scalar::generator();
+        let mut u_vec = (0..n)
+            .map(|i| {
                 // Compute u_i
-                let l_i_minus_1 = w_i - G1Element::generator();
+                let l_i_minus_1 = w_vec[i] - G1Element::generator();
                 let denom = tau - omega_i;
                 let u_i = (l_i_minus_1 / denom).unwrap();
 
@@ -56,8 +52,7 @@ impl KZG for KZGDeriv {
                 if i < n - 1 {
                     omega_i *= domain.element(1);
                 }
-
-                (w_i, u_i)
+                u_i
             })
             .collect();
 
