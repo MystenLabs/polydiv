@@ -6,14 +6,18 @@ use rand::thread_rng;
 use crate::fft::{BLS12381Domain, FFTDomain};
 use crate::KZG;
 
+#[derive(Clone)]
 pub struct KZGFK {
     domain: BLS12381Domain,
     tau_powers_g1: Vec<G1Element>,
     tau_powers_g2: Vec<G2Element>,
 }
 
-impl KZGFK {
-    pub fn new(n: usize) -> FastCryptoResult<Self> {
+impl KZG for KZGFK {
+    // Uses the BLS12-381 construction
+    type G = G1Element;
+
+    fn new(n: usize) -> FastCryptoResult<Self> {
         let domain = BLS12381Domain::new(n)?;
 
         // Generate tau using a random scalar
@@ -35,11 +39,6 @@ impl KZGFK {
             tau_powers_g2,
         })
     }
-}
-
-impl KZG for KZGFK {
-    // Uses the BLS12-381 construction
-    type G = G1Element;
 
     fn commit(&self, v: &[Scalar]) -> G1Element {
         let poly = self.domain.ifft(&v);

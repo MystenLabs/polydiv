@@ -1,5 +1,6 @@
 // Declare the modules
 
+use fastcrypto::error::FastCryptoResult;
 use fastcrypto::groups::GroupElement;
 
 pub mod kzg_deriv;
@@ -9,8 +10,10 @@ pub mod kzg_tabdfk;
 
 pub mod fft;
 
-pub trait KZG {
+pub trait KZG: Sized + Clone {
     type G: GroupElement;
+
+    fn new(n: usize) -> FastCryptoResult<Self>;
 
     fn commit(&self, v: &[<Self::G as GroupElement>::ScalarType]) -> Self::G;
 

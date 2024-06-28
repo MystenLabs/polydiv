@@ -8,41 +8,36 @@ use rand::thread_rng;
 use crate::fft::{BLS12381Domain, FFTDomain};
 use crate::KZG;
 
+#[derive(Clone)]
 pub struct KZGDeriv {
     domain: BLS12381Domain,
-    tau_powers_g1: Vec<G1Element>,
-    tau_powers_g2: Vec<G2Element>,
+    g2_tau: G2Element,
     w_vec: Vec<G1Element>,
     u_vec: Vec<G1Element>,
 }
 
-impl KZGDeriv {
-    pub fn new(n: usize) -> FastCryptoResult<Self> {
+impl KZG for KZGDeriv {
+    // Uses the BLS12-381 construction
+    type G = G1Element;
+
+    fn new(n: usize) -> FastCryptoResult<Self> {
         let domain = BLS12381Domain::new(n)?;
 
         // Generate tau using a random scalar
         let tau = Scalar::rand(&mut thread_rng());
 
         // Compute g^tau^i for i = 0 to n-1 in G1
-        let tau_powers_g1: Vec<G1Element> = itertools::iterate(G1Element::generator(), |g| g * tau)
-            .take(n)
-            .collect();
-
-        // Compute g^tau^i for i = 0 to n-1 in G2
-        let tau_powers_g2: Vec<G2Element> = itertools::iterate(G2Element::generator(), |g| g * tau)
-            .take(n)
-            .collect();
+        let g2_tau = G2Element::generator() * tau;
 
         // Compute w_vec and u_i = g^{(L_i(tau) - 1)/(tau-omega^i)}
 
         let mut omega_i = Scalar::generator();
         let (w_vec, u_vec) = (0..n)
             .map(|i| {
+                // Compute w_i
                 let mut num = Scalar::from(1u128);
                 let mut denom = Scalar::from(1u128);
-
                 let mut omega_j = domain.element(0);
-
                 for j in 0..n {
                     if i != j {
                         num *= tau - omega_j;
@@ -52,12 +47,14 @@ impl KZGDeriv {
                         omega_j *= domain.element(1);
                     }
                 }
-                let w_i = G1Element::generator() * num * denom.inverse().unwrap();
+                let w_i = G1Element::generator() * (num / denom).unwrap();
 
-                let l_i_minus_1 = w_i - tau_powers_g1[0];
+                // Compute u_i
+                let l_i_minus_1 = w_i - G1Element::generator();
                 let denom = tau - omega_i;
                 let u_i = (l_i_minus_1 / denom).unwrap();
 
+                // Update omega_i
                 if i < n - 1 {
                     omega_i *= domain.element(1);
                 }
@@ -68,17 +65,11 @@ impl KZGDeriv {
 
         Ok(Self {
             domain,
-            tau_powers_g1,
-            tau_powers_g2,
+            g2_tau,
             w_vec,
             u_vec,
         })
     }
-}
-
-impl KZG for KZGDeriv {
-    // Uses the BLS12-381 construction
-    type G = G1Element;
 
     fn commit(&self, v: &[Scalar]) -> G1Element {
         G1Element::multi_scalar_mul(&v, &self.w_vec).unwrap()
@@ -123,11 +114,11 @@ impl KZG for KZGDeriv {
         commitment: &G1Element,
         open_i: &G1Element,
     ) -> bool {
-        let lhs = *commitment - self.tau_powers_g1[0] * v_i;
-        let rhs = self.tau_powers_g2[1] - self.tau_powers_g2[0] * self.domain.element(index);
+        let lhs = *commitment - G1Element::generator() * v_i;
+        let rhs = self.g2_tau - G2Element::generator() * self.domain.element(index);
 
         // Perform the pairing check
-        lhs.pairing(&self.tau_powers_g2[0]) == open_i.pairing(&rhs)
+        lhs.pairing(&G2Element::generator()) == open_i.pairing(&rhs)
     }
 
     fn update(

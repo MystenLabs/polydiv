@@ -8,21 +8,25 @@ use rand::thread_rng;
 use crate::fft::{BLS12381Domain, FFTDomain};
 use crate::KZG;
 
+#[derive(Clone)]
 pub struct KZGTabDFK {
     domain: BLS12381Domain,
-    tau_powers_g1: Vec<G1Element>,
-    tau_powers_g2: Vec<G2Element>,
 
     // Jonas: Is this variable necessary?
     a: G1Element,
+
+    g2_tau: G2Element,
 
     u_vec: Vec<G1Element>,
     l_vec: Vec<G1Element>,
     a_vec: Vec<G1Element>,
 }
 
-impl KZGTabDFK {
-    pub fn new(n: usize) -> FastCryptoResult<Self> {
+impl KZG for KZGTabDFK {
+    // Uses the BLS12-381 construction
+    type G = G1Element;
+
+    fn new(n: usize) -> FastCryptoResult<Self> {
         let domain = BLS12381Domain::new(n)?;
 
         // Generate tau using a random scalar
@@ -33,15 +37,13 @@ impl KZGTabDFK {
             .take(n)
             .collect();
 
-        // Compute g^tau^i for i = 0 to n-1 in G2
-        let tau_powers_g2: Vec<G2Element> = itertools::iterate(G2Element::generator(), |g| g * tau)
-            .take(n)
-            .collect();
+        let g2_tau = G2Element::generator() * tau;
 
         //Compute a = g^{A(tau)} where A = X^n-1
-        let g_tau_n = tau_powers_g1[n - 1].mul(tau); // g^{tau^n}
-        let g = G1Element::generator();
-        let a = g_tau_n - g;
+        let g_tau_n = (0..n).fold(G1Element::generator(), |acc, _| acc * tau);
+
+        //let g_tau_n = tau_powers_g1[n - 1].mul(tau); // g^{tau^n}
+        let a = g_tau_n - G1Element::generator();
 
         // Compute a_i = g^{A(tau)/tau - omega^i}
         let mut a_vec = vec![G1Element::zero(); n];
@@ -86,19 +88,13 @@ impl KZGTabDFK {
 
         Ok(Self {
             domain,
-            tau_powers_g1,
-            tau_powers_g2,
+            g2_tau,
             a,
             u_vec,
             l_vec,
             a_vec,
         })
     }
-}
-
-impl KZG for KZGTabDFK {
-    // Uses the BLS12-381 construction
-    type G = G1Element;
 
     fn commit(&self, v: &[Scalar]) -> G1Element {
         G1Element::multi_scalar_mul(&v, &self.l_vec).unwrap()
@@ -152,12 +148,12 @@ impl KZG for KZGTabDFK {
         commitment: &G1Element,
         open_i: &G1Element,
     ) -> bool {
-        let lhs = *commitment - self.tau_powers_g1[0] * v_i;
+        let lhs = *commitment - G1Element::generator() * v_i;
 
-        let rhs = self.tau_powers_g2[1] - self.tau_powers_g2[0] * self.domain.element(index);
+        let rhs = self.g2_tau - G2Element::generator() * self.domain.element(index);
 
         // Perform the pairing check e(lhs, g) == e(open_i, rhs)
-        let lhs_pairing = lhs.pairing(&self.tau_powers_g2[0]);
+        let lhs_pairing = lhs.pairing(&G2Element::generator());
         let rhs_pairing = open_i.pairing(&rhs);
 
         lhs_pairing == rhs_pairing
@@ -202,7 +198,7 @@ impl KZG for KZGTabDFK {
         let w_ij = self.a_vec[index].mul(c_i) + self.a_vec[index_j].mul(c_j);
 
         // Compute u_ij = w_ij^{omega_j / n}
-        let omega_j_n = (omega_j / Scalar::from(self.tau_powers_g1.len() as u128)).unwrap();
+        let omega_j_n = (omega_j / Scalar::from(self.domain.size() as u128)).unwrap();
         let u_ij = w_ij.mul(omega_j_n);
         *open + u_ij.mul(new_v_j - old_v_j)
     }

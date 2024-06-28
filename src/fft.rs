@@ -26,6 +26,7 @@ pub trait FFTDomain: Sized {
     fn size(&self) -> usize;
 }
 
+#[derive(Clone)]
 pub struct BLS12381Domain {
     domain: GeneralEvaluationDomain<Fr>,
 }

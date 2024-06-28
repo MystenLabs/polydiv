@@ -39,14 +39,18 @@ fn polynomial_division(
     Ok((quotient, remainder))
 }
 
+#[derive(Clone)]
 pub struct KZGOriginal {
     domain: BLS12381Domain,
     tau_powers_g1: Vec<G1Element>,
     tau_powers_g2: Vec<G2Element>,
 }
 
-impl KZGOriginal {
-    pub fn new(n: usize) -> FastCryptoResult<Self> {
+impl KZG for KZGOriginal {
+    // Uses the BLS12-381 construction
+    type G = G1Element;
+
+    fn new(n: usize) -> FastCryptoResult<Self> {
         let domain = BLS12381Domain::new(n)?;
 
         // Generate tau using a random scalar
@@ -68,11 +72,6 @@ impl KZGOriginal {
             tau_powers_g2,
         })
     }
-}
-
-impl KZG for KZGOriginal {
-    // Uses the BLS12-381 construction
-    type G = G1Element;
 
     fn commit(&self, v: &[Scalar]) -> G1Element {
         let poly = self.domain.ifft(&v);
