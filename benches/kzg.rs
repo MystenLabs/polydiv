@@ -11,7 +11,7 @@ use rand::{thread_rng, Rng};
 // Adjust the imports based on your actual project structure
 
 fn kzg_single<K: KZG, M: Measurement>(name: &str, c: &mut BenchmarkGroup<M>) {
-    let input_sizes = [128]; //, 128, 1024, 8192, 65536];
+    let input_sizes = [128]; //, 16, 128, 1024, 8192, 65536];
 
     for size in input_sizes {
         c.bench_function(format!("{}/new/{}", name, size), |b| {
@@ -20,12 +20,13 @@ fn kzg_single<K: KZG, M: Measurement>(name: &str, c: &mut BenchmarkGroup<M>) {
         let kzg = K::new(size).unwrap();
 
         let mut rng = thread_rng();
-        let data = vec![<<K as KZG>::G as GroupElement>::ScalarType::rand(&mut rng); size];
+        let data: Vec<_> = (0..size)
+            .map(|_| <<K as KZG>::G as GroupElement>::ScalarType::rand(&mut rng))
+            .collect();
 
         c.bench_function(format!("{}/commit/{}", name, size), |b| {
             b.iter(|| kzg.commit(&data));
         });
-
         let mut commitment = kzg.commit(&data);
 
         // Pick a random index to open
