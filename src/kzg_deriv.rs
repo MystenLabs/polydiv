@@ -12,10 +12,27 @@ use crate::KZG;
 
 #[derive(Clone)]
 pub struct KZGDeriv {
-    domain: BLS12381Domain,
+    n: usize,
+    omega: Scalar,
     g2_tau: G2Element,
     w_vec: Vec<G1Element>,
     u_vec: Vec<G1Element>,
+}
+
+impl KZGDeriv {
+    fn element(&self, index: usize) -> Scalar {
+        if index == 0 {
+            return Scalar::generator();
+        } else if index == 1 {
+            return self.omega;
+        }
+
+        let half = self.element(index / 2);
+        if index % 2 == 0 {
+            return half * half;
+        }
+        half * half * self.omega
+    }
 }
 
 impl KZG for KZGDeriv {
@@ -56,8 +73,11 @@ impl KZG for KZGDeriv {
             })
             .collect();
 
+        let omega = domain.element(1);
+
         Ok(Self {
-            domain,
+            n,
+            omega,
             g2_tau,
             w_vec,
             u_vec,
@@ -73,10 +93,9 @@ impl KZG for KZGDeriv {
         let mut v_prime = Scalar::zero();
 
         // Intialize omega_j = 1 and omega_j_minus_i = omega_i^-1
-        let omega_i = self.domain.element(index);
+        let omega_i = self.element(index);
         let mut omega_j = Scalar::generator();
-        let mut omega_j_minus_i = self.domain.element(self.domain.size() - index);
-        let omega = self.domain.element(1);
+        let mut omega_j_minus_i = self.element(self.n - index);
 
         for j in 0..v.len() {
             if j != index {
@@ -90,8 +109,8 @@ impl KZG for KZGDeriv {
             }
 
             if j < v.len() - 1 {
-                omega_j *= omega;
-                omega_j_minus_i *= omega;
+                omega_j *= self.omega;
+                omega_j_minus_i *= self.omega;
             }
         }
 
@@ -108,7 +127,7 @@ impl KZG for KZGDeriv {
         open_i: &G1Element,
     ) -> bool {
         let lhs = *commitment - G1Element::generator() * v_i;
-        let rhs = self.g2_tau - G2Element::generator() * self.domain.element(index);
+        let rhs = self.g2_tau - G2Element::generator() * self.element(index);
 
         // Perform the pairing check
         lhs.pairing(&G2Element::generator()) == open_i.pairing(&rhs)
@@ -144,9 +163,9 @@ impl KZG for KZGDeriv {
     ) -> G1Element {
         assert_ne!(index, index_j, "index and index_j should be different.");
 
-        let omega_i = self.domain.element(index);
-        let omega_j = self.domain.element(index_j);
-        let omega_i_inverse = self.domain.element(self.domain.size() - index);
+        let omega_i = self.element(index);
+        let omega_j = self.element(index_j);
+        let omega_i_inverse = self.element(self.n - index);
 
         let to_mul_1 = (old_v_j - new_v_j) * (omega_i - omega_j).inverse().unwrap();
         let to_mul_2 = -to_mul_1 * omega_j * omega_i_inverse;
