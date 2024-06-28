@@ -1,8 +1,9 @@
-use fastcrypto::error::{FastCryptoError, FastCryptoResult};
+use std::ops::Mul;
+
+use fastcrypto::error::FastCryptoResult;
 use fastcrypto::groups::bls12381::{G1Element, G2Element, Scalar};
 use fastcrypto::groups::{GroupElement, MultiScalarMul, Pairing, Scalar as OtherScalar};
 use rand::thread_rng;
-use std::ops::Mul;
 
 use crate::fft::{BLS12381Domain, FFTDomain};
 use crate::KZG;
@@ -93,7 +94,7 @@ impl KZG for KZGDeriv {
         let mut omega_j_minus_i = self.domain.element(self.domain.size() - index);
         let omega = self.domain.element(1);
 
-        for j in (0..v.len()) {
+        for j in 0..v.len() {
             if j != index {
                 let diff_inverse = (omega_i - omega_j).inverse().unwrap();
                 v_prime += v[j] * omega_j_minus_i * diff_inverse;
@@ -237,10 +238,10 @@ mod tests {
         let new_v_index = Scalar::rand(&mut rng);
 
         //Update the commitment
-        let mut new_commitment = kzg.update(&mut commitment, index, &v[index], &new_v_index);
+        let new_commitment = kzg.update(&mut commitment, index, &v[index], &new_v_index);
 
         //Update the opening
-        let mut new_opening = kzg.update_open_i(&mut open_value, index, &v[index], &new_v_index);
+        let new_opening = kzg.update_open_i(&mut open_value, index, &v[index], &new_v_index);
 
         //Verify the updated opening
         let is_valid = kzg.verify(index, &new_v_index, &new_commitment, &new_opening);
@@ -274,18 +275,23 @@ mod tests {
         // Create an opening
         let mut open_value = kzg.open(&v, index);
 
-        // Pick a new index to update
-
-        let index_j = rng.gen_range(0..n);
+        // Pick a new index to update¨
+        let mut index_j;
+        loop {
+            index_j = rng.gen_range(0..n);
+            if index_j != index {
+                break;
+            }
+        }
 
         // Set a new value for v_i
         let new_v_index_j = Scalar::rand(&mut rng);
 
         //Update the commitment
-        let mut new_commitment = kzg.update(&mut commitment, index_j, &v[index_j], &new_v_index_j);
+        let new_commitment = kzg.update(&mut commitment, index_j, &v[index_j], &new_v_index_j);
 
         //Update the opening
-        let mut new_opening =
+        let new_opening =
             kzg.update_open_j(&mut open_value, index, index_j, &v[index_j], &new_v_index_j);
 
         //Verify the updated opening

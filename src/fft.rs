@@ -79,10 +79,12 @@ fn arkworks_to_fastcrypto(f: &Fr) -> Scalar {
 
 #[cfg(test)]
 mod tests {
-    use crate::fft::{BLS12381Domain, FFTDomain};
+    use std::ops::{Add, Mul};
+
     use fastcrypto::groups::bls12381::{G1Element, G2Element, GTElement, Scalar};
     use fastcrypto::groups::{GroupElement, HashToGroupElement, MultiScalarMul, Pairing};
-    use std::ops::{Add, Mul};
+
+    use crate::fft::{BLS12381Domain, FFTDomain};
 
     #[test]
     fn test_fft() {

@@ -1,8 +1,7 @@
-use fastcrypto::error::{FastCryptoError, FastCryptoResult};
+use fastcrypto::error::FastCryptoResult;
 use fastcrypto::groups::bls12381::{G1Element, G2Element, Scalar};
 use fastcrypto::groups::{GroupElement, MultiScalarMul, Pairing, Scalar as OtherScalar};
 use rand::thread_rng;
-use std::ops::Mul;
 
 use crate::fft::{BLS12381Domain, FFTDomain};
 use crate::KZG;
@@ -48,13 +47,14 @@ impl KZG for KZGFK {
     }
 
     fn open(&self, v: &[Scalar], index: usize) -> G1Element {
-        let mut poly = self.domain.ifft(&v);
+        let poly = self.domain.ifft(&v);
         let mut quotient_coeffs: Vec<Scalar> = vec![Scalar::zero(); poly.len() - 1];
 
         quotient_coeffs[poly.len() - 2] = poly[poly.len() - 1];
 
+        let omega_i = self.domain.element(index);
         for j in (0..poly.len() - 2).rev() {
-            quotient_coeffs[j] = poly[j + 1] + quotient_coeffs[j + 1] * self.domain.element(index);
+            quotient_coeffs[j] = poly[j + 1] + quotient_coeffs[j + 1] * omega_i;
         }
 
         G1Element::multi_scalar_mul(
@@ -80,11 +80,8 @@ impl KZG for KZGFK {
 
         let rhs = self.tau_powers_g2[1] - self.tau_powers_g2[0] * self.domain.element(index);
 
-        // Perform the pairing check e(lhs, g) == e(open_i, rhs)
-        let lhs_pairing = lhs.pairing(&self.tau_powers_g2[0]);
-        let rhs_pairing = open_i.pairing(&rhs);
-
-        lhs_pairing == rhs_pairing
+        // Perform the pairing check
+        lhs.pairing(&self.tau_powers_g2[0]) == open_i.pairing(&rhs)
     }
 
     fn update(

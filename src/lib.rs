@@ -13,7 +13,9 @@ pub trait KZG {
     type G: GroupElement;
 
     fn commit(&self, v: &[<Self::G as GroupElement>::ScalarType]) -> Self::G;
+
     fn open(&self, v: &[<Self::G as GroupElement>::ScalarType], index: usize) -> Self::G;
+
     fn verify(
         &self,
         index: usize,
@@ -21,6 +23,7 @@ pub trait KZG {
         commitment: &Self::G,
         open_i: &Self::G,
     ) -> bool;
+
     fn update(
         &self,
         commitment: &mut Self::G,
@@ -28,6 +31,7 @@ pub trait KZG {
         old_v_i: &<Self::G as GroupElement>::ScalarType,
         new_v_i: &<Self::G as GroupElement>::ScalarType,
     ) -> Self::G;
+
     fn update_open_i(
         &self,
         open: &mut Self::G,
@@ -35,6 +39,7 @@ pub trait KZG {
         old_v_i: &<Self::G as GroupElement>::ScalarType,
         new_v_i: &<Self::G as GroupElement>::ScalarType,
     ) -> Self::G;
+
     fn update_open_j(
         &self,
         open: &mut Self::G,

@@ -1,8 +1,9 @@
-use fastcrypto::error::{FastCryptoError, FastCryptoResult};
+use std::ops::Mul;
+
+use fastcrypto::error::FastCryptoResult;
 use fastcrypto::groups::bls12381::{G1Element, G2Element, Scalar};
 use fastcrypto::groups::{GroupElement, MultiScalarMul, Pairing, Scalar as OtherScalar};
 use rand::thread_rng;
-use std::ops::Mul;
 
 use crate::fft::{BLS12381Domain, FFTDomain};
 use crate::KZG;
@@ -11,7 +12,10 @@ pub struct KZGTabDFK {
     domain: BLS12381Domain,
     tau_powers_g1: Vec<G1Element>,
     tau_powers_g2: Vec<G2Element>,
+
+    // Jonas: Is this variable necessary?
     a: G1Element,
+
     u_vec: Vec<G1Element>,
     l_vec: Vec<G1Element>,
     a_vec: Vec<G1Element>,
@@ -41,21 +45,23 @@ impl KZGTabDFK {
 
         // Compute a_i = g^{A(tau)/tau - omega^i}
         let mut a_vec = vec![G1Element::zero(); n];
+
+        //Compute l_i = g^L_i(tau)
+        let mut l_vec = vec![G1Element::zero(); n];
+
+        //Compute u_i = g^{(L_i(tau) - 1)/(tau-omega^i)}
+        let mut u_vec = vec![G1Element::zero(); n];
+
+        let mut omega_i = domain.element(0);
         for i in 0..n {
-            let omega_i = domain.element(i);
+            // Compute a_i
             let denom = tau - omega_i;
             let a_i = a.mul(denom.inverse().unwrap());
             a_vec[i] = a_i;
-        }
 
-        //Compute l_i = g^L_i(tau)
-
-        let mut l_vec = vec![G1Element::zero(); n];
-        for i in 0..n {
+            // Compute l_i
             let mut num = Scalar::from(1u128);
             let mut denom = Scalar::from(1u128);
-            let omega_i = domain.element(i);
-
             for j in 0..n {
                 if i != j {
                     let omega_j = domain.element(j);
@@ -63,20 +69,19 @@ impl KZGTabDFK {
                     denom *= omega_i - omega_j;
                 }
             }
+            let l_i = G1Element::generator().mul(num * denom.inverse().unwrap());
+            l_vec[i] = l_i;
 
-            let l_i = num * denom.inverse().unwrap();
-            l_vec[i] = G1Element::generator().mul(l_i);
-        }
-
-        //Compute u_i = g^{(L_i(tau) - 1)/(tau-omega^i)}
-        let mut u_vec = vec![G1Element::zero(); n];
-        for i in 0..n {
-            let omega_i = domain.element(i);
-            let l_i = l_vec[i];
+            // Compute u_i
             let l_i_minus_1 = l_i - tau_powers_g1[0];
             let denom = tau - omega_i;
             let u_i = l_i_minus_1.mul(denom.inverse().unwrap());
             u_vec[i] = u_i;
+
+            // Update omega_i
+            if i < n - 1 {
+                omega_i *= domain.element(1);
+            }
         }
 
         Ok(Self {
@@ -101,7 +106,7 @@ impl KZG for KZGTabDFK {
 
     fn open(&self, v: &[Scalar], index: usize) -> G1Element {
         let mut uij_vec = vec![G1Element::zero(); v.len()];
-        for j in (0..v.len()) {
+        for j in 0..v.len() {
             if j != index {
                 let omega_i = self.domain.element(index);
                 let omega_j = self.domain.element(j);
@@ -265,10 +270,10 @@ mod tests {
         let new_v_index = Scalar::rand(&mut rng);
 
         //Update the commitment
-        let mut new_commitment = kzg.update(&mut commitment, index, &v[index], &new_v_index);
+        let new_commitment = kzg.update(&mut commitment, index, &v[index], &new_v_index);
 
         //Update the opening
-        let mut new_opening = kzg.update_open_i(&mut open_value, index, &v[index], &new_v_index);
+        let new_opening = kzg.update_open_i(&mut open_value, index, &v[index], &new_v_index);
 
         //Verify the updated opening
         let is_valid = kzg.verify(index, &new_v_index, &new_commitment, &new_opening);
@@ -302,18 +307,23 @@ mod tests {
         // Create an opening
         let mut open_value = kzg.open(&v, index);
 
-        // Pick a new index to update
-
-        let index_j = rng.gen_range(0..n);
+        // Pick a new index to update¨
+        let mut index_j;
+        loop {
+            index_j = rng.gen_range(0..n);
+            if index_j != index {
+                break;
+            }
+        }
 
         // Set a new value for v_i
         let new_v_index_j = Scalar::rand(&mut rng);
 
         //Update the commitment
-        let mut new_commitment = kzg.update(&mut commitment, index_j, &v[index_j], &new_v_index_j);
+        let new_commitment = kzg.update(&mut commitment, index_j, &v[index_j], &new_v_index_j);
 
         //Update the opening
-        let mut new_opening =
+        let new_opening =
             kzg.update_open_j(&mut open_value, index, index_j, &v[index_j], &new_v_index_j);
 
         //Verify the updated opening

@@ -2,7 +2,6 @@ use fastcrypto::error::{FastCryptoError, FastCryptoResult};
 use fastcrypto::groups::bls12381::{G1Element, G2Element, Scalar};
 use fastcrypto::groups::{GroupElement, MultiScalarMul, Pairing, Scalar as OtherScalar};
 use rand::thread_rng;
-use std::ops::Mul;
 
 use crate::fft::{BLS12381Domain, FFTDomain};
 use crate::KZG;
