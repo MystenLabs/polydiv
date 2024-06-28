@@ -25,12 +25,9 @@ impl KZG for KZGDeriv {
 
         // Generate tau using a random scalar
         let tau = Scalar::rand(&mut thread_rng());
-
-        // Compute g^tau^i for i = 0 to n-1 in G1
         let g2_tau = G2Element::generator() * tau;
 
         // Compute w_vec and u_i = g^{(L_i(tau) - 1)/(tau-omega^i)}
-
         let mut omega_i = Scalar::generator();
         let (w_vec, u_vec) = (0..n)
             .map(|i| {
