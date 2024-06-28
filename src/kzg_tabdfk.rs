@@ -3,6 +3,7 @@ use std::ops::Mul;
 use fastcrypto::error::FastCryptoResult;
 use fastcrypto::groups::bls12381::{G1Element, G2Element, Scalar};
 use fastcrypto::groups::{GroupElement, MultiScalarMul, Pairing, Scalar as OtherScalar};
+use itertools::iterate;
 use rand::thread_rng;
 
 use crate::fft::{BLS12381Domain, FFTDomain};
@@ -32,11 +33,6 @@ impl KZG for KZGTabDFK {
         // Generate tau using a random scalar
         let tau = Scalar::rand(&mut thread_rng());
 
-        // Compute g^tau^i for i = 0 to n-1 in G1
-        let tau_powers_g1: Vec<G1Element> = itertools::iterate(G1Element::generator(), |g| g * tau)
-            .take(n)
-            .collect();
-
         let g2_tau = G2Element::generator() * tau;
 
         //Compute a = g^{A(tau)} where A = X^n-1
@@ -48,11 +44,19 @@ impl KZG for KZGTabDFK {
         // Compute a_i = g^{A(tau)/tau - omega^i}
         let mut a_vec = vec![G1Element::zero(); n];
 
-        //Compute l_i = g^L_i(tau)
-        let mut l_vec = vec![G1Element::zero(); n];
-
         //Compute u_i = g^{(L_i(tau) - 1)/(tau-omega^i)}
         let mut u_vec = vec![G1Element::zero(); n];
+
+        // Compute tau^i for i = 0 to n-1
+        let tau_powers_g1: Vec<Scalar> =
+            iterate(Scalar::generator(), |g| g * tau).take(n).collect();
+
+        // Compute l_i = g^L_i(tau)
+        let l_vec: Vec<G1Element> = domain
+            .ifft(&tau_powers_g1)
+            .iter()
+            .map(|s| G1Element::generator() * s)
+            .collect();
 
         let mut omega_i = domain.element(0);
         for i in 0..n {
@@ -61,21 +65,8 @@ impl KZG for KZGTabDFK {
             let a_i = a.mul(denom.inverse().unwrap());
             a_vec[i] = a_i;
 
-            // Compute l_i
-            let mut num = Scalar::from(1u128);
-            let mut denom = Scalar::from(1u128);
-            for j in 0..n {
-                if i != j {
-                    let omega_j = domain.element(j);
-                    num *= tau - omega_j;
-                    denom *= omega_i - omega_j;
-                }
-            }
-            let l_i = G1Element::generator().mul(num * denom.inverse().unwrap());
-            l_vec[i] = l_i;
-
             // Compute u_i
-            let l_i_minus_1 = l_i - tau_powers_g1[0];
+            let l_i_minus_1 = l_vec[i] - G1Element::generator();
             let denom = tau - omega_i;
             let u_i = l_i_minus_1.mul(denom.inverse().unwrap());
             u_vec[i] = u_i;
