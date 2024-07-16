@@ -46,9 +46,9 @@ fn multiply_d_matrix_by_vector(vector: &[Scalar]) -> Vec<Scalar> {
 
     result
 }
-
+// this currently does n MSMs, can improve this to an O(n) algorithm as we did for d_matrix multiplicaiton
 fn multiply_matrix_vector(matrix: &[Vec<Scalar>], v: &[G1Element]) -> Vec<G1Element> {
-    let n = matrix.len();
+    let n = v.len();
     let mut result = vec![G1Element::zero(); n];
 
     for i in 0..n {
@@ -197,11 +197,13 @@ impl KZG for KZGDeriv {
 
         let n = v.len();
 
-        //compute D
+        //compute D - dont need this
         let mut d_matrix = vec![vec![Scalar::zero(); n]; n];
         for i in 0..n-1 { // n-1 to avoid out of bounds access for j = i+1
             d_matrix[i][i + 1] = Scalar::from((i + 1) as u128);
         }
+
+        
 
         // println!("{:?}",d_matrix);
 
@@ -212,17 +214,14 @@ impl KZG for KZGDeriv {
                 if i == 0 && j == n - 1 {
                     c_matrix[i][j] = ((Scalar::from((n - 1) as u128)) / (Scalar::from(2 as u128))).unwrap();
                 } else if j + 1 == i && i >= 1 && i < n {
-                    // let half_n_plus_1 = (Scalar::from((n + 1) as u128) / Scalar::from(2u128)).map_err(|e| FastCryptoError::InvalidInput)?;
-                    // c_matrix[i][j] = (Scalar::from(i as u128) - half_n_plus_1).map_err(|e| FastCryptoError::InvalidInput)?;
                     c_matrix[i][j] = Scalar::from(i as u128) - (Scalar::from((n + 1) as u128) / Scalar::from(2u128)).unwrap();
-                    // c_matrix[i][j] = (Scalar::from(i as u128) - (Scalar::from((n + 1) as u128) / Scalar::from(2u128))?)?;
                 } else {
                     c_matrix[i][j] = Scalar::zero();
                 }
             }
         }
 
-        println!("{:?}",c_matrix);
+        // println!("{:?}",c_matrix);
 
 
         
@@ -261,11 +260,86 @@ impl KZG for KZGDeriv {
 
         let  result3 = diadiv_idft_tau_v.clone();
 
-        let result = add_vectors(result1,result2,result3);
+        let result = add_vectors(result1.clone(),result2.clone(),result3.clone());
 
-
-        result
         
+
+
+        // result
+
+        //test code to check the equation is correct
+
+        //compute result1 
+        
+        let mut d_hat = vec![vec![Scalar::zero(); n]; n];
+        for i in 0..n{
+            for j in 0..n{
+                let omega_i = self.element(i);
+                let omega_j = self.element(j);
+                if i == j{
+                    d_hat[i][j] = (Scalar::from((n - 1) as u128) / (Scalar::from(2u128) * omega_i)).unwrap();
+                }
+                else{
+                    d_hat[i][j] = self.element(j) * self.element(n-i) * (omega_i - omega_j).inverse().unwrap();
+                }
+            }
+        }
+        // println!("{:?}", d_hat);
+
+        let d_hat_v = multiply_matrix_scalar_vector(&d_hat, v);
+
+        let result1_test: Vec<G1Element> = self.tau_powers_g1.iter()
+            .zip(d_hat_v.iter())
+            .map(|(a, b)| a.mul(*b)) 
+            .collect();
+
+        println!("Check result1 {}", result1 == result1_test);
+
+
+        //compute result2 
+
+        let mut c_div = vec![vec![Scalar::zero(); n]; n];
+        for i in 0..n{
+            for j in 0..n{
+                let omega_i = self.element(i);
+                let omega_j = self.element(j);
+                if i == j{
+                    c_div[i][j] = Scalar::zero();
+                }
+                else{
+                    c_div[i][j] = Scalar::from((1) as u128) * (omega_j - omega_i).inverse().unwrap();
+                }
+            }
+        }
+
+        // println!("{:?}", c_div);
+
+        let mut col_pow_tau = multiply_matrix_vector(&c_div, &self.tau_powers_g1);
+
+        // println!("{:?}", col_pow_tau);
+
+        let result2_test: Vec<G1Element> = col_pow_tau.iter()
+            .zip(v.iter())
+            .map(|(a, b)| a.mul(*b)) 
+            .collect();
+            // println!("{:?}", result2);
+        
+        println!("Check result2 {}", result2 == result2_test);
+        
+        //compute result3 
+
+        let mut mult_test:Vec<G1Element> = self.tau_powers_g1.iter()
+        .zip(v.iter())
+        .map(|(a, b)| a.mul(*b)) 
+        .collect();
+
+        let result3_test = multiply_matrix_vector(&c_div, &mult_test);
+
+        let result_test = add_vectors(result1_test,result2_test,result3_test.clone());
+
+        println!("Check result3 {}", result3 == result3_test);
+        println!("{}", result == result_test);
+        result_test
 
 
         
@@ -465,7 +539,7 @@ mod tests {
         let mut rng = rand::thread_rng();
 
         // Create a new KZGDeriv struct
-        let n = 4;
+        let n = 8;
         let kzg = KZGDeriv::new(n).unwrap();
 
         // Create a random vector v
