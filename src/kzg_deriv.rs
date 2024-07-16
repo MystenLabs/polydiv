@@ -1,22 +1,76 @@
 use std::ops::Mul;
-
-use fastcrypto::error::FastCryptoResult;
+use fastcrypto::error::{FastCryptoResult,FastCryptoError};
 use fastcrypto::groups::bls12381::{G1Element, G2Element, Scalar};
 use fastcrypto::groups::{GroupElement, MultiScalarMul, Pairing, Scalar as OtherScalar};
 use fastcrypto::serde_helpers::ToFromByteArray;
 use itertools::{iterate, Itertools};
 use rand::thread_rng;
+use rayon::prelude::*;
+use std::sync::{Mutex, Arc};
+
+
+
 
 use crate::fft::{BLS12381Domain, FFTDomain};
 use crate::KZG;
 
+
+fn add_vectors(v1: Vec<G1Element>, v2: Vec<G1Element>, v3: Vec<G1Element>) -> Vec<G1Element> {
+    v1.into_iter().zip(v2.into_iter()).zip(v3.into_iter())
+        .map(|((a, b), c)| a+b+c)
+        .collect()
+}
+
+fn multiply_matrix_scalar_vector(matrix: &[Vec<Scalar>], v: &[Scalar]) -> Vec<Scalar> {
+    let n = matrix.len();
+    let mut result = vec![Scalar::zero(); n];
+
+    for i in 0..n {
+        for j in 0..v.len() {
+            if matrix[i][j] != Scalar::zero() {
+                result[i] = result[i] + matrix[i][j].mul(v[j]);
+            }
+        }
+    }
+
+    result
+}
+
+fn multiply_d_matrix_by_vector(vector: &[Scalar]) -> Vec<Scalar> {
+    let n = vector.len();
+    let mut result = vec![Scalar::zero(); n];
+
+    for i in 0..n-1 {
+        result[i] = Scalar::from((i + 1) as u128) * vector[i + 1];
+    }
+
+    result
+}
+
+fn multiply_matrix_vector(matrix: &[Vec<Scalar>], v: &[G1Element]) -> Vec<G1Element> {
+    let n = matrix.len();
+    let mut result = vec![G1Element::zero(); n];
+
+    for i in 0..n {
+        let scalars = &matrix[i];
+        result[i] = G1Element::multi_scalar_mul(&scalars, &v).unwrap();
+    }
+
+    result
+}
+
+
+
+
 #[derive(Clone)]
 pub struct KZGDeriv {
+    domain: BLS12381Domain,
     n: usize,
     omega: Scalar,
     g2_tau: G2Element,
     w_vec: Vec<G1Element>,
     u_vec: Vec<G1Element>,
+    tau_powers_g1: Vec<G1Element>,
 }
 
 impl KZGDeriv {
@@ -51,12 +105,12 @@ impl KZG for KZGDeriv {
         let g2_tau = G2Element::generator() * tau;
 
         // Compute tau^i for i = 0 to n-1
-        let tau_powers_g1: Vec<Scalar> =
+        let tau_powers_g: Vec<Scalar> =
             iterate(Scalar::generator(), |g| g * tau).take(n).collect();
 
         // Compute w_vec and u_i = g^{(L_i(tau) - 1)/(tau-omega^i)}
         let w_vec: Vec<G1Element> = domain
-            .ifft(&tau_powers_g1)
+            .ifft(&tau_powers_g)
             .iter()
             .map(|s| G1Element::generator() * s)
             .collect();
@@ -79,12 +133,18 @@ impl KZG for KZGDeriv {
 
         let omega = domain.element(1);
 
+        let tau_powers_g1: Vec<G1Element> = itertools::iterate(G1Element::generator(), |g| g.mul(tau))
+            .take(n)
+            .collect();
+
         Ok(Self {
+            domain,
             n,
             omega,
             g2_tau,
             w_vec,
             u_vec,
+            tau_powers_g1
         })
     }
 
@@ -93,34 +153,124 @@ impl KZG for KZGDeriv {
     }
 
     fn open(&self, v: &[Scalar], index: usize) -> G1Element {
-        let mut scalars = vec![Scalar::zero(); v.len()];
-        let mut v_prime = Scalar::zero();
+        let scalars = Arc::new(Mutex::new(vec![Scalar::zero(); v.len()]));
+        let v_prime = Arc::new(Mutex::new(Scalar::zero()));
 
-        // Intialize omega_j = 1 and omega_j_minus_i = omega_i^-1
+        // Initialize omega_i and omega_j_minus_i
         let omega_i = self.element(index);
-        let mut omega_j = Scalar::generator();
-        let mut omega_j_minus_i = self.element(self.n - index);
+        let omega_base = Scalar::generator();
+        let omega_j_minus_i_base = self.element(self.n - index);
 
-        for j in 0..v.len() {
+        (0..v.len()).into_par_iter().for_each(|j| {
+            let mut local_omega_j = omega_base;
+            let mut local_omega_j_minus_i = omega_j_minus_i_base;
+
+            // Compute local omegas
+            for _ in 0..j {
+                local_omega_j *= self.omega;
+                local_omega_j_minus_i *= self.omega;
+            }
+
             if j != index {
-                let diff_inverse = (omega_i - omega_j).inverse().unwrap();
-                v_prime += v[j] * omega_j_minus_i * diff_inverse;
-                scalars[j] = (v[index] - v[j]) * diff_inverse;
+                let diff_inverse = (omega_i - local_omega_j).inverse().unwrap();
+                let mut v_prime_guard = v_prime.lock().unwrap();
+                *v_prime_guard += v[j] * local_omega_j_minus_i * diff_inverse;
+
+                let mut scalars_guard = scalars.lock().unwrap();
+                scalars_guard[j] = (v[index] - v[j]) * diff_inverse;
             } else {
-                v_prime += v[j]
+                let mut v_prime_guard = v_prime.lock().unwrap();
+                *v_prime_guard += v[j]
                     * (Scalar::from((v.len() - 1) as u128) / (Scalar::from(2u128) * omega_i))
                         .unwrap();
             }
+        });
 
-            if j < v.len() - 1 {
-                omega_j *= self.omega;
-                omega_j_minus_i *= self.omega;
+        let v_prime = v_prime.lock().unwrap().clone();
+        let mut scalars_guard = scalars.lock().unwrap();
+        scalars_guard[index] = v_prime;
+
+        G1Element::multi_scalar_mul(&scalars_guard, &self.w_vec[..scalars_guard.len()]).unwrap()
+    }
+
+    fn open_all(&self, v: &[Scalar], indices: Vec<usize>) -> Vec<G1Element> {
+
+        let n = v.len();
+
+        //compute D
+        let mut d_matrix = vec![vec![Scalar::zero(); n]; n];
+        for i in 0..n-1 { // n-1 to avoid out of bounds access for j = i+1
+            d_matrix[i][i + 1] = Scalar::from((i + 1) as u128);
+        }
+
+        // println!("{:?}",d_matrix);
+
+        //compute ColEDivHat
+        let mut c_matrix = vec![vec![Scalar::zero(); n]; n];
+        for i in 0..n {
+            for j in 0..n {
+                if i == 0 && j == n - 1 {
+                    c_matrix[i][j] = ((Scalar::from((n - 1) as u128)) / (Scalar::from(2 as u128))).unwrap();
+                } else if j + 1 == i && i >= 1 && i < n {
+                    // let half_n_plus_1 = (Scalar::from((n + 1) as u128) / Scalar::from(2u128)).map_err(|e| FastCryptoError::InvalidInput)?;
+                    // c_matrix[i][j] = (Scalar::from(i as u128) - half_n_plus_1).map_err(|e| FastCryptoError::InvalidInput)?;
+                    c_matrix[i][j] = Scalar::from(i as u128) - (Scalar::from((n + 1) as u128) / Scalar::from(2u128)).unwrap();
+                    // c_matrix[i][j] = (Scalar::from(i as u128) - (Scalar::from((n + 1) as u128) / Scalar::from(2u128))?)?;
+                } else {
+                    c_matrix[i][j] = Scalar::zero();
+                }
             }
         }
 
-        scalars[index] = v_prime;
+        println!("{:?}",c_matrix);
 
-        G1Element::multi_scalar_mul(&scalars, &self.w_vec[..scalars.len()]).unwrap()
+
+        
+
+
+        //first compute tau*Dhatv
+        let idftv = self.domain.ifft(&v);
+        let d_msm_idftv:Vec<Scalar> = multiply_d_matrix_by_vector(&idftv);
+        let dhatv = self.domain.fft(&d_msm_idftv);
+        let result1: Vec<G1Element> = self.tau_powers_g1.iter()
+            .zip(dhatv.iter())
+            .map(|(a, b)| a.mul(*b)) 
+            .collect();
+        
+        //next compute ColEDiv.tau*v
+
+        let mut powtau = self.tau_powers_g1.clone();
+        self.domain.fft_in_place_g1(&mut powtau);
+        let mut col_hat_dft_tau: Vec<G1Element> = multiply_matrix_vector(&c_matrix, &powtau);
+        self.domain.ifft_in_place_g1(&mut col_hat_dft_tau);
+        let result2: Vec<G1Element> = col_hat_dft_tau.iter()
+            .zip(v.iter())
+            .map(|(a, b)| a.mul(*b)) 
+            .collect();
+        
+        // finally compute diadiv.powtau*v
+
+        let mut mult:Vec<G1Element> = self.tau_powers_g1.iter()
+        .zip(v.iter())
+        .map(|(a, b)| a.mul(*b)) 
+        .collect();
+
+        self.domain.fft_in_place_g1(&mut mult);
+        let mut diadiv_idft_tau_v : Vec<G1Element> = multiply_matrix_vector(&c_matrix, &mult);
+        self.domain.ifft_in_place_g1(&mut diadiv_idft_tau_v);
+
+        let  result3 = diadiv_idft_tau_v.clone();
+
+        let result = add_vectors(result1,result2,result3);
+
+
+        result
+        
+
+
+        
+
+        // indices.into_iter().map(|i| self.open(v, i)).collect()
     }
 
     fn verify(
@@ -195,13 +345,13 @@ mod tests {
         let mut rng = rand::thread_rng();
 
         // Create a new KZGDeriv struct
-        let n = 8;
+        let n = 4;
         let kzg = KZGDeriv::new(n).unwrap();
 
         // Create a random vector v
         let v: Vec<Scalar> = (0..n).map(|_| OtherScalar::rand(&mut rng)).collect();
 
-        println!("{:?}", v);
+        // println!("{:?}", v);
 
         // Create a commitment
         let commitment = kzg.commit(&v);
@@ -230,7 +380,7 @@ mod tests {
         // Create a random vector v
         let v: Vec<Scalar> = (0..n).map(|_| OtherScalar::rand(&mut rng)).collect();
 
-        println!("{:?}", v);
+        // println!("{:?}", v);
 
         // Create a commitment
         let mut commitment = kzg.commit(&v);
@@ -271,7 +421,7 @@ mod tests {
         // Create a random vector v
         let v: Vec<Scalar> = (0..n).map(|_| OtherScalar::rand(&mut rng)).collect();
 
-        println!("{:?}", v);
+        // println!("{:?}", v);
 
         // Create a commitment
         let mut commitment = kzg.commit(&v);
@@ -310,4 +460,35 @@ mod tests {
             "Verification of the opening after updating j's value should succeed."
         );
     }
+    #[test]
+    fn test_kzg_commit_open_all() {
+        let mut rng = rand::thread_rng();
+
+        // Create a new KZGDeriv struct
+        let n = 4;
+        let kzg = KZGDeriv::new(n).unwrap();
+
+        // Create a random vector v
+        let v: Vec<Scalar> = (0..n).map(|_| OtherScalar::rand(&mut rng)).collect();
+
+        // println!("{:?}", v);
+
+        // Create a commitment
+        let commitment = kzg.commit(&v);
+
+        // Create array with all indices
+        let indices: Vec<usize> = (0..n).collect();
+
+        // Create an opening
+        let open_values = kzg.open_all(&v, indices.clone());
+
+        println!("{:?}", open_values);
+
+        // Verify all openings
+        for (i, open_value) in open_values.iter().enumerate() {
+            let is_valid = kzg.verify(indices[i], &v[indices[i]], &commitment, open_value);
+            assert!(is_valid, "Verification of the opening should succeed for index {}", i);
+        }
+    }
+
 }

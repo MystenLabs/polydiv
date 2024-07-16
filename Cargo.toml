@@ -12,6 +12,7 @@ ark-ff = "0.4.2"
 ark-ec = "0.4.2"
 rand = "0.8.4"
 itertools = "0.13.0"
+rayon = "1.5"
 
 [dev-dependencies]
 criterion = "0.5.1"

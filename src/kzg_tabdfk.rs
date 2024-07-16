@@ -9,6 +9,8 @@ use rand::thread_rng;
 use crate::fft::{BLS12381Domain, FFTDomain};
 use crate::KZG;
 
+
+
 #[derive(Clone)]
 pub struct KZGTabDFK {
     domain: BLS12381Domain,
@@ -21,6 +23,78 @@ pub struct KZGTabDFK {
     u_vec: Vec<G1Element>,
     l_vec: Vec<G1Element>,
     a_vec: Vec<G1Element>,
+    tau_powers_g1: Vec<G1Element>,
+}
+
+pub fn multiply_toeplitz_with_vector_fft(
+    toeplitz_matrix: &[Scalar],
+    vector: &[G1Element]
+) -> Vec<G1Element> {
+    let m = toeplitz_matrix.len();
+
+    // Instantiate FFT domain with size 2m 
+    let domain = BLS12381Domain::new(2 * m).unwrap();
+
+    // Compute FFT of the circulant vector
+    // let fft_circulant = domain.fft(&circulant_vector);
+
+    let mut c_vector = vec![Scalar::zero(); 2 * m];
+    // println!("{:?}", toeplitz_matrix);
+    for i in 0..m{
+        c_vector[m+i] = toeplitz_matrix[i];
+    }
+
+    // println!("{:?}", c_vector);
+
+    let v = domain.fft(&c_vector);
+
+    // println!("{:?}", v);
+    
+
+    // Pad the input vector to match the size of the circulant vector
+    let mut padded_vector = vec![G1Element::zero(); 2 * m];
+    for i in 0..m {
+        padded_vector[i] = vector[i];
+    }
+
+    // println!("{:?}", padded_vector);
+
+    // Compute FFT of the padded vector
+    domain.fft_in_place_g1(&mut padded_vector);
+
+    let mut omega_vector = vec![Scalar::zero(); 2 * m ];
+    for i in 0..2*m{
+        let item = domain.element(i);
+        omega_vector[i] = item;
+    }
+
+
+    // println!("{:?}", omega_vector);
+
+    // Element-wise multiplication in the frequency domain
+    let fft_result_1: Vec<G1Element> = v.iter()
+        .zip(padded_vector.iter())
+        .map(|(a, b)| b.mul(*a)) 
+        .collect();
+
+    // Second product in the exponent
+    let fft_result: Vec<G1Element> = fft_result_1.iter()
+        .zip(omega_vector.iter())
+        .map(|(a, b)| a.mul(*b)) 
+        .collect();
+    // fft_result
+    // Compute inverse FFT
+    let mut ifft_result = fft_result.clone();
+    domain.ifft_in_place_g1(&mut ifft_result);
+    // ifft_result
+
+
+    // Extract the result corresponding to the original vector length
+    let res = ifft_result[..m].to_vec();
+    let mut result = res.clone();
+    domain.fft_in_place_g1(&mut result);
+    result
+
 }
 
 impl KZG for KZGTabDFK {
@@ -48,12 +122,15 @@ impl KZG for KZGTabDFK {
         let mut u_vec = vec![G1Element::zero(); n];
 
         // Compute tau^i for i = 0 to n-1
-        let tau_powers_g1: Vec<Scalar> =
+        let tau_powers_g: Vec<Scalar> =
             iterate(Scalar::generator(), |g| g * tau).take(n).collect();
+        let tau_powers_g1: Vec<G1Element> = itertools::iterate(G1Element::generator(), |g| g.mul(tau))
+            .take(n)
+            .collect();
 
         // Compute l_i = g^L_i(tau)
         let l_vec: Vec<G1Element> = domain
-            .ifft(&tau_powers_g1)
+            .ifft(&tau_powers_g)
             .iter()
             .map(|s| G1Element::generator() * s)
             .collect();
@@ -84,6 +161,7 @@ impl KZG for KZGTabDFK {
             u_vec,
             l_vec,
             a_vec,
+            tau_powers_g1,
         })
     }
 
@@ -114,6 +192,14 @@ impl KZG for KZGTabDFK {
         }
         open += self.u_vec[index].mul(v[index]);
         open
+    }
+
+    fn open_all(&self, v: &[Scalar], indices: Vec<usize>) -> Vec<G1Element> {
+        let poly = self.domain.ifft(v);
+        let mut t = self.tau_powers_g1.clone();
+        t.reverse();
+        let h = multiply_toeplitz_with_vector_fft(&poly, &t);
+        h
     }
 
     fn verify(

@@ -55,7 +55,7 @@ impl KZG for KZGOriginal {
         let domain = BLS12381Domain::new(n)?;
 
         // Generate tau using a random scalar
-        let tau = Scalar::rand(&mut thread_rng());
+        let tau = fastcrypto::groups::bls12381::Scalar::rand(&mut thread_rng());
 
         // Compute g^tau^i for i = 0 to n-1 in G1
         let tau_powers_g1: Vec<G1Element> = itertools::iterate(G1Element::generator(), |g| g * tau)
@@ -84,6 +84,10 @@ impl KZG for KZGOriginal {
         let (quotient, _) = polynomial_division(&poly, &divisor).unwrap();
 
         G1Element::multi_scalar_mul(&quotient, &self.tau_powers_g1[..quotient.len()]).unwrap()
+    }
+
+    fn open_all(&self, v: &[Scalar], indices: Vec<usize>) -> Vec<G1Element> {
+        indices.into_iter().map(|i| self.open(v, i)).collect()
     }
 
     fn verify(
@@ -170,5 +174,34 @@ mod tests {
 
         // Assert that the verification passes
         assert!(is_valid, "Verification of the opening should succeed.");
+    }
+
+    #[test]
+    fn test_kzg_commit_open_all() {
+        let mut rng = rand::thread_rng();
+
+        // Create a new KZGOriginal struct
+        let n = 8;
+        let kzg = KZGOriginal::new(n).unwrap();
+
+        // Create a random vector v
+        let v: Vec<Scalar> = (0..n).map(|_| OtherScalar::rand(&mut rng)).collect();
+
+        println!("{:?}", v);
+
+        // Create a commitment
+        let commitment = kzg.commit(&v);
+
+        // Create array with all indices
+        let indices: Vec<usize> = (0..n).collect();
+
+        // Create an opening
+        let open_values = kzg.open_all(&v, indices.clone());
+
+        // Verify all openings
+        for (i, open_value) in open_values.iter().enumerate() {
+            let is_valid = kzg.verify(indices[i], &v[indices[i]], &commitment, open_value);
+            assert!(is_valid, "Verification of the opening should succeed for index {}", i);
+        }
     }
 }
