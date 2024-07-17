@@ -7,6 +7,8 @@ use itertools::{iterate, Itertools};
 use rand::thread_rng;
 use rayon::prelude::*;
 use std::sync::{Mutex, Arc};
+extern crate nalgebra as na;
+use na::{DMatrix};
 
 
 
@@ -14,11 +16,99 @@ use std::sync::{Mutex, Arc};
 use crate::fft::{BLS12381Domain, FFTDomain};
 use crate::KZG;
 
+// fn inverse_matrix(matrix: Vec<Vec<Scalar>>) -> Vec<Vec<Scalar>> {
+//     let n = matrix.len();
+//     let mut augmented = vec![vec![Scalar::zero(); 2 * n]; n];
+
+//     // Create the augmented matrix [matrix | identity]
+//     for i in 0..n {
+//         for j in 0..n {
+//             augmented[i][j] = matrix[i][j].clone();
+//         }
+//         augmented[i][n + i] = Scalar::from((1) as u128);
+//     }
+
+//     // Perform Gaussian elimination
+//     for i in 0..n {
+//         // Find the pivot
+//         let mut pivot = i;
+//         for j in (i + 1)..n {
+//             if augmented[j][i] != Scalar::zero() {
+//                 pivot = j;
+//                 break;
+//             }
+//         }
+//         if augmented[pivot][i] == Scalar::zero() {
+//             return vec![];; // Matrix is singular
+//         }
+
+//         // Swap rows i and pivot
+//         augmented.swap(i, pivot);
+
+//         // Normalize the pivot row
+//         let pivot_inv = augmented[i][i].inverse().unwrap(); // Ensure invertibility
+//         for j in 0..2 * n {
+//             augmented[i][j] *= pivot_inv;
+//         }
+
+//         // Eliminate the current column in all other rows
+//         for j in 0..n {
+//             if j != i {
+//                 let factor = augmented[j][i].clone();
+//                 for k in 0..2 * n {
+//                     augmented[j][k] -= factor * augmented[i][k].clone();
+//                 }
+//             }
+//         }
+//     }
+
+//     // Extract the inverse matrix from the augmented matrix
+//     let mut inverse = vec![vec![Scalar::zero(); n]; n];
+//     for i in 0..n {
+//         for j in 0..n {
+//             inverse[i][j] = augmented[i][n + j].clone();
+//         }
+//     }
+
+//     inverse
+// }
+
+
+// fn convert_to_dmatrix(matrix_data: Vec<Vec<Scalar>>) -> DMatrix<Scalar> {
+//     let rows = matrix_data.len();
+//     let cols = matrix_data[0].len();
+//     DMatrix::from_vec(rows, cols, matrix_data.into_iter().flatten().collect())
+// }
 
 fn add_vectors(v1: Vec<G1Element>, v2: Vec<G1Element>, v3: Vec<G1Element>) -> Vec<G1Element> {
     v1.into_iter().zip(v2.into_iter()).zip(v3.into_iter())
         .map(|((a, b), c)| a+b+c)
         .collect()
+}
+
+fn matrix_multiply(a: &Vec<Vec<Scalar>>, b: &Vec<Vec<Scalar>>) -> Vec<Vec<Scalar>> {
+    // Check if the matrices can be multiplied
+    // if a[0].len() != b.len() {
+    //     return; // The number of columns in A must be equal to the number of rows in B
+    // }
+
+    let rows_a = a.len();
+    let cols_a = a[0].len();
+    let cols_b = b[0].len();
+
+    // Initialize the result matrix with zeros
+    let mut result = vec![vec![Scalar::zero(); cols_b]; rows_a];
+
+    // Perform matrix multiplication
+    for i in 0..rows_a {
+        for j in 0..cols_b {
+            for k in 0..cols_a {
+                result[i][j] += a[i][k] * b[k][j];
+            }
+        }
+    }
+
+    result
 }
 
 fn multiply_matrix_scalar_vector(matrix: &[Vec<Scalar>], v: &[Scalar]) -> Vec<Scalar> {
@@ -69,6 +159,7 @@ pub struct KZGDeriv {
     omega: Scalar,
     g2_tau: G2Element,
     w_vec: Vec<G1Element>,
+    check_w_vec: Vec<G1Element>,
     u_vec: Vec<G1Element>,
     tau_powers_g1: Vec<G1Element>,
 }
@@ -108,11 +199,12 @@ impl KZG for KZGDeriv {
         let tau_powers_g: Vec<Scalar> =
             iterate(Scalar::generator(), |g| g * tau).take(n).collect();
 
+        let g = G1Element::generator();
         // Compute w_vec and u_i = g^{(L_i(tau) - 1)/(tau-omega^i)}
         let w_vec: Vec<G1Element> = domain
             .ifft(&tau_powers_g)
             .iter()
-            .map(|s| G1Element::generator() * s)
+            .map(|s| g.mul(s))
             .collect();
 
         let mut omega_i = Scalar::generator();
@@ -133,9 +225,14 @@ impl KZG for KZGDeriv {
 
         let omega = domain.element(1);
 
-        let tau_powers_g1: Vec<G1Element> = itertools::iterate(G1Element::generator(), |g| g.mul(tau))
-            .take(n)
-            .collect();
+        let tau_powers_g1: Vec<G1Element> = tau_powers_g.iter().map(|x| g.mul(x)).collect();
+
+        let mut check_w_vec = tau_powers_g1.clone();
+        domain.ifft_in_place_g1(&mut check_w_vec);
+        println!("w_vec {:?}", w_vec);
+        println!("check_w_vec{:?}", check_w_vec);
+
+        println!("This test is {}", check_w_vec == w_vec);
 
         Ok(Self {
             domain,
@@ -143,6 +240,7 @@ impl KZG for KZGDeriv {
             omega,
             g2_tau,
             w_vec,
+            check_w_vec,
             u_vec,
             tau_powers_g1
         })
@@ -191,6 +289,10 @@ impl KZG for KZGDeriv {
         scalars_guard[index] = v_prime;
 
         G1Element::multi_scalar_mul(&scalars_guard, &self.w_vec[..scalars_guard.len()]).unwrap()
+
+
+        // implement open with edivk
+
     }
 
     fn open_all(&self, v: &[Scalar], indices: Vec<usize>) -> Vec<G1Element> {
@@ -212,11 +314,24 @@ impl KZG for KZGDeriv {
         for i in 0..n {
             for j in 0..n {
                 if i == 0 && j == n - 1 {
-                    c_matrix[i][j] = ((Scalar::from((n - 1) as u128)) / (Scalar::from(2 as u128))).unwrap();
+                    c_matrix[i][j] = -((Scalar::from((n - 1) as u128)) / (Scalar::from(2 as u128))).unwrap();
                 } else if j + 1 == i && i >= 1 && i < n {
-                    c_matrix[i][j] = Scalar::from(i as u128) - (Scalar::from((n + 1) as u128) / Scalar::from(2u128)).unwrap();
+                    c_matrix[i][j] = -Scalar::from(i as u128) + (Scalar::from((n + 1) as u128) / Scalar::from(2u128)).unwrap();
                 } else {
                     c_matrix[i][j] = Scalar::zero();
+                }
+            }
+        }
+
+        let mut d_matrix = vec![vec![Scalar::zero(); n]; n];
+        for i in 0..n {
+            for j in 0..n {
+                if i == 0 && j == n - 1 {
+                    d_matrix[i][j] = ((Scalar::from((n - 1) as u128)) / (Scalar::from(2 as u128))).unwrap();
+                } else if j + 1 == i && i >= 1 && i < n {
+                    d_matrix[i][j] = Scalar::from(i as u128) - (Scalar::from((n + 1) as u128) / Scalar::from(2u128)).unwrap();
+                } else {
+                    d_matrix[i][j] = Scalar::zero();
                 }
             }
         }
@@ -227,18 +342,18 @@ impl KZG for KZGDeriv {
         
 
 
-        //first compute tau*Dhatv
+        //first compute tau*Dhatv - result1
         let idftv = self.domain.ifft(&v);
         let d_msm_idftv:Vec<Scalar> = multiply_d_matrix_by_vector(&idftv);
         let dhatv = self.domain.fft(&d_msm_idftv);
-        let result1: Vec<G1Element> = self.tau_powers_g1.iter()
+        let result1: Vec<G1Element> = self.w_vec.iter()
             .zip(dhatv.iter())
             .map(|(a, b)| a.mul(*b)) 
             .collect();
         
-        //next compute ColEDiv.tau*v
+        //next compute ColEDiv.tau*v - result2
 
-        let mut powtau = self.tau_powers_g1.clone();
+        let mut powtau = self.w_vec.clone();
         self.domain.fft_in_place_g1(&mut powtau);
         let mut col_hat_dft_tau: Vec<G1Element> = multiply_matrix_vector(&c_matrix, &powtau);
         self.domain.ifft_in_place_g1(&mut col_hat_dft_tau);
@@ -247,15 +362,15 @@ impl KZG for KZGDeriv {
             .map(|(a, b)| a.mul(*b)) 
             .collect();
         
-        // finally compute diadiv.powtau*v
+        // finally compute diadiv.powtau*v - result3
 
-        let mut mult:Vec<G1Element> = self.tau_powers_g1.iter()
+        let mut mult:Vec<G1Element> = self.w_vec.iter()
         .zip(v.iter())
         .map(|(a, b)| a.mul(*b)) 
         .collect();
 
         self.domain.fft_in_place_g1(&mut mult);
-        let mut diadiv_idft_tau_v : Vec<G1Element> = multiply_matrix_vector(&c_matrix, &mult);
+        let mut diadiv_idft_tau_v : Vec<G1Element> = multiply_matrix_vector(&d_matrix, &mult);
         self.domain.ifft_in_place_g1(&mut diadiv_idft_tau_v);
 
         let  result3 = diadiv_idft_tau_v.clone();
@@ -265,7 +380,7 @@ impl KZG for KZGDeriv {
         
 
 
-        // result
+        
 
         //test code to check the equation is correct
 
@@ -280,7 +395,7 @@ impl KZG for KZGDeriv {
                     d_hat[i][j] = (Scalar::from((n - 1) as u128) / (Scalar::from(2u128) * omega_i)).unwrap();
                 }
                 else{
-                    d_hat[i][j] = self.element(j) * self.element(n-i) * (omega_i - omega_j).inverse().unwrap();
+                    d_hat[i][j] =  self.element(j) * self.element(n - i) * (omega_i - omega_j).inverse().unwrap();
                 }
             }
         }
@@ -288,7 +403,7 @@ impl KZG for KZGDeriv {
 
         let d_hat_v = multiply_matrix_scalar_vector(&d_hat, v);
 
-        let result1_test: Vec<G1Element> = self.tau_powers_g1.iter()
+        let result1_test: Vec<G1Element> = self.w_vec.iter()
             .zip(d_hat_v.iter())
             .map(|(a, b)| a.mul(*b)) 
             .collect();
@@ -307,14 +422,28 @@ impl KZG for KZGDeriv {
                     c_div[i][j] = Scalar::zero();
                 }
                 else{
-                    c_div[i][j] = Scalar::from((1) as u128) * (omega_j - omega_i).inverse().unwrap();
+                    c_div[i][j] = (omega_i - omega_j).inverse().unwrap();
+                }
+            }
+        }
+
+        let mut d_div = vec![vec![Scalar::zero(); n]; n];
+        for i in 0..n{
+            for j in 0..n{
+                let omega_i = self.element(i);
+                let omega_j = self.element(j);
+                if i == j{
+                    d_div[i][j] = Scalar::zero();
+                }
+                else{
+                    d_div[i][j] = (omega_j - omega_i).inverse().unwrap();
                 }
             }
         }
 
         // println!("{:?}", c_div);
 
-        let mut col_pow_tau = multiply_matrix_vector(&c_div, &self.tau_powers_g1);
+        let mut col_pow_tau = multiply_matrix_vector(&c_div, &self.w_vec);
 
         // println!("{:?}", col_pow_tau);
 
@@ -328,18 +457,159 @@ impl KZG for KZGDeriv {
         
         //compute result3 
 
-        let mut mult_test:Vec<G1Element> = self.tau_powers_g1.iter()
+        let mut mult_test:Vec<G1Element> = self.w_vec.iter()
         .zip(v.iter())
         .map(|(a, b)| a.mul(*b)) 
         .collect();
 
-        let result3_test = multiply_matrix_vector(&c_div, &mult_test);
+        let result3_test = multiply_matrix_vector(&d_div, &mult_test);
 
         let result_test = add_vectors(result1_test,result2_test,result3_test.clone());
 
         println!("Check result3 {}", result3 == result3_test);
         println!("{}", result == result_test);
-        result_test
+        // result_test
+        result
+
+        // // test with edivk 
+
+        // let mut result_ediv = vec![G1Element::zero();v.len()];
+        // let mut edivk = vec![vec![Scalar::zero(); n]; n];
+        // for k in 0..n{
+        //     for i in 0..n{
+        //         for j in 0..n{
+        //             let omega_i = self.element(i);
+        //             let omega_j = self.element(j);
+        //             let omega_k = self.element(k);
+        //             if i == j && i != k{
+        //                 edivk[i][j] = (omega_i - omega_k).inverse().unwrap();
+        //             }
+        //             else if i == k && j != k{
+        //                 edivk[i][j] = omega_j * self.element(n-k)*(omega_k - omega_j).inverse().unwrap();
+        //             }
+
+        //             else if j == k && i != k{
+        //                 edivk[i][j] = (omega_k - omega_i).inverse().unwrap();
+
+        //             }
+        //             else if i == j && i == k{
+        //                 edivk[i][j] = self.element(n-k)*((Scalar::from((n-1) as u128)) / (Scalar::from(2 as u128))).unwrap();
+        //             }
+        //             else{
+        //                 edivk[i][j] = Scalar::zero();
+        //             }
+        //         }
+        //     }
+        //     let edivk_v = multiply_matrix_scalar_vector(&edivk, &v);
+
+        //     result_ediv[k]=G1Element::multi_scalar_mul(&edivk_v, &self.tau_powers_g1).unwrap();
+        // }
+
+        
+
+        // println!("{:?}", edivk);
+
+        // let mut m_hat = vec![vec![Scalar::zero(); n]; n];
+        // for i in 0..n{
+        //     for j in 0..n{
+        //         let omega_i = self.element(i);
+        //         let omega_j = self.element(j);
+        //         if i != j{
+        //             m_hat[i][j] = - omega_j*((Scalar::from((1) as u128)) / (Scalar::from(n as u128))).unwrap();
+        //         }
+        //         else{
+        //             m_hat[i][j] = omega_j*((Scalar::from((n-1) as u128)) / (Scalar::from(n as u128))).unwrap();
+        //         }
+        //     }
+        // }
+
+        // for k in 0..n{
+
+        //     let mut e_k = vec![vec![Scalar::zero(); n]; n];
+        //     for i in 0..n{
+        //         for j in 0..n{
+        //             if i == 0 && j == k{
+        //                 e_k[i][j] = 1.into();
+        //             }
+        //             else{
+        //                 e_k[i][j] = 0.into();
+        //             }
+        //         }
+        //     }
+
+        //     let mut i_matrix = vec![vec![Scalar::zero(); n]; n];
+        //     for i in 0..n{
+        //         for j in 0..n{
+        //             if i == j{
+        //                 i_matrix[i][j] = 1.into();
+        //             }
+        //             else{
+        //                 i_matrix[i][j] = 0.into();
+        //             }
+        //         }
+        //     }
+
+        //     let omega_k = self.element(k);
+
+        //     let mut omega_k_i = vec![vec![Scalar::zero(); n]; n];
+
+        //     for i in 0..n{
+        //         for j in  0..n{
+        //             omega_k_i[i][j] = omega_k*i_matrix[i][j];
+        //         }
+        //     }
+
+        //     let mut m_hat_minus_omega_k_i = vec![vec![Scalar::zero(); n]; n];
+        //     for i in 0..n{
+        //         for j in 0..n{
+        //             m_hat_minus_omega_k_i[i][j] = m_hat[i][j]-omega_k*i_matrix[i][j];
+        //         }
+        //     }
+
+        //     let matrix = convert_to_dmatrix(m_hat_minus_omega_k_i);
+        //     let inverse_vec = inverse_matrix(m_hat_minus_omega_k_i);
+        //     // match matrix.try_inverse() {
+        //     //     Some(inverse) => {
+        //     //         // Convert the inverse DMatrix back to a vector of vectors
+        //     //         inverse_vec = (0..inverse.nrows())
+        //     //             .map(|i| (0..inverse.ncols()).map(|j| inverse[(i, j)].clone()).collect())
+        //     //             .collect();
+        
+        //     //         println!("The inverse of the matrix is:");
+        //     //         for row in &inverse_vec {
+        //     //             println!("{:?}", row);
+        //     //         }
+        //     //     }
+        //     //     None => {
+        //     //         println!("The matrix is not invertible.");
+        //     //     }
+        //     // }
+
+        //     let mut dft_ek = self.domain.fft(&e_k);
+        //     let mut right_matrix = vec![vec![Scalar::zero(); n]; n];
+        //     for i in 0..n{
+        //         for j in 0..n{
+        //             right_matrix[i][j] = i_matrix[i][j] - dft_ek[i][j];
+        //         }
+        //     }
+
+        //     let mut edivk = matrix_multiply(&inverse_vec, &right_matrix);
+
+        //     let ediv_vecval = multiply_matrix_scalar_vector(&edivk, &v);
+
+        //     result_ediv[k] = G1Element::multi_scalar_mul(&ediv_vecval, &self.tau_powers_g1).unwrap();
+
+
+
+
+
+
+
+
+        // }
+
+        // result_ediv
+        
 
 
         
