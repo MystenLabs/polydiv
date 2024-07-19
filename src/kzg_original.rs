@@ -7,6 +7,8 @@ use rand::thread_rng;
 use crate::fft::{BLS12381Domain, FFTDomain};
 use crate::KZG;
 
+/// Performs polynomial division of the dividend by the divisor
+/// Returns the quotient and remainder
 fn polynomial_division(
     dividend: &[Scalar],
     divisor: &[Scalar],
@@ -40,6 +42,7 @@ fn polynomial_division(
     Ok((quotient, remainder))
 }
 
+/// Struct for the original KZG commitment scheme using BLS12-381
 #[derive(Clone)]
 pub struct KZGOriginal {
     domain: BLS12381Domain,
@@ -48,13 +51,12 @@ pub struct KZGOriginal {
 }
 
 impl KZG for KZGOriginal {
-    // Uses the BLS12-381 construction
     type G = G1Element;
 
+    /// Creates a new KZGOriginal instance with a random tau
     fn new(n: usize) -> FastCryptoResult<Self> {
         let domain = BLS12381Domain::new(n)?;
 
-        // Generate tau using a random scalar
         let tau = fastcrypto::groups::bls12381::Scalar::rand(&mut thread_rng());
 
         // Compute g^tau^i for i = 0 to n-1 in G1
@@ -71,11 +73,13 @@ impl KZG for KZGOriginal {
         })
     }
 
+    /// Commits to a vector using the KZG commitment scheme
     fn commit(&self, v: &[Scalar]) -> G1Element {
         let poly = self.domain.ifft(&v);
         G1Element::multi_scalar_mul(poly.as_slice(), &self.tau_powers_g1).unwrap()
     }
 
+    /// Opens a KZG commitment at a specific index
     fn open(&self, v: &[Scalar], index: usize) -> G1Element {
         let mut poly = self.domain.ifft(&v);
         poly[0] -= &v[index];
@@ -86,10 +90,12 @@ impl KZG for KZGOriginal {
         G1Element::multi_scalar_mul(&quotient, &self.tau_powers_g1[..quotient.len()]).unwrap()
     }
 
+    /// Opens a KZG commitment at multiple indices
     fn open_all(&self, v: &[Scalar], indices: Vec<usize>) -> Vec<G1Element> {
         indices.into_iter().map(|i| self.open(v, i)).collect()
     }
 
+    /// Verifies a KZG opening
     fn verify(
         &self,
         index: usize,
@@ -101,7 +107,6 @@ impl KZG for KZGOriginal {
 
         let rhs = self.g2_tau - G2Element::generator() * self.domain.element(index);
 
-        // Perform the pairing check e(lhs, g) == e(open_i, rhs)
         let lhs_pairing = lhs.pairing(&G2Element::generator());
         let rhs_pairing = open_i.pairing(&rhs);
 
@@ -111,9 +116,9 @@ impl KZG for KZGOriginal {
     fn update(
         &self,
         commitment: &mut G1Element,
-        index: usize,
-        old_v_i: &Scalar,
-        new_v_i: &Scalar,
+        _index: usize,
+        _old_v_i: &Scalar,
+        _new_v_i: &Scalar,
     ) -> G1Element {
         *commitment
     }
@@ -121,9 +126,9 @@ impl KZG for KZGOriginal {
     fn update_open_i(
         &self,
         open: &mut G1Element,
-        index: usize,
-        old_v_i: &Scalar,
-        new_v_i: &Scalar,
+        _index: usize,
+        _old_v_i: &Scalar,
+        _new_v_i: &Scalar,
     ) -> G1Element {
         *open
     }
@@ -131,10 +136,10 @@ impl KZG for KZGOriginal {
     fn update_open_j(
         &self,
         open: &mut G1Element,
-        index: usize,
-        index_j: usize,
-        old_v_j: &Scalar,
-        new_v_j: &Scalar,
+        _index: usize,
+        _index_j: usize,
+        _old_v_j: &Scalar,
+        _new_v_j: &Scalar,
     ) -> G1Element {
         *open
     }
@@ -150,55 +155,26 @@ mod tests {
     #[test]
     fn test_kzg_commit_open_verify() {
         let mut rng = rand::thread_rng();
-
-        // Create a new KZGOriginal struct
         let n = 8;
         let kzg = KZGOriginal::new(n).unwrap();
-
-        // Create a random vector v
         let v: Vec<Scalar> = (0..n).map(|_| OtherScalar::rand(&mut rng)).collect();
-
-        println!("{:?}", v);
-
-        // Create a commitment
         let commitment = kzg.commit(&v);
-
-        // Pick a random index to open
         let index = rng.gen_range(0..n);
-
-        // Create an opening
         let open_value = kzg.open(&v, index);
-
-        // Verify the opening
         let is_valid = kzg.verify(index, &v[index], &commitment, &open_value);
-
-        // Assert that the verification passes
         assert!(is_valid, "Verification of the opening should succeed.");
     }
 
     #[test]
     fn test_kzg_commit_open_all() {
         let mut rng = rand::thread_rng();
-
-        // Create a new KZGOriginal struct
         let n = 8;
         let kzg = KZGOriginal::new(n).unwrap();
-
-        // Create a random vector v
         let v: Vec<Scalar> = (0..n).map(|_| OtherScalar::rand(&mut rng)).collect();
-
-        println!("{:?}", v);
-
-        // Create a commitment
         let commitment = kzg.commit(&v);
-
-        // Create array with all indices
         let indices: Vec<usize> = (0..n).collect();
-
-        // Create an opening
         let open_values = kzg.open_all(&v, indices.clone());
 
-        // Verify all openings
         for (i, open_value) in open_values.iter().enumerate() {
             let is_valid = kzg.verify(indices[i], &v[indices[i]], &commitment, open_value);
             assert!(is_valid, "Verification of the opening should succeed for index {}", i);
