@@ -1,120 +1,68 @@
 use std::ops::Mul;
-
 use fastcrypto::error::FastCryptoResult;
+use fastcrypto::error::FastCryptoError;
 use fastcrypto::groups::bls12381::{G1Element, G2Element, Scalar};
 use fastcrypto::groups::{GroupElement, MultiScalarMul, Pairing, Scalar as OtherScalar};
 use itertools::iterate;
 use rand::thread_rng;
-
 use crate::fft::{BLS12381Domain, FFTDomain};
 use crate::KZG;
 
-/// Computes the matrix-vector multiplication using explicit matrix representation
-pub fn compute_matrix_vector_multiplication(
-    coefficients: &[Scalar],
-    tau_powers: &[G1Element],
-) -> Vec<G1Element> {
-    let d = coefficients.len();
-    let mut result = vec![G1Element::zero(); d];
-    let mut matrix = vec![vec![Scalar::zero(); d]; d];
+pub fn build_circulant(polynomial: &[Scalar], size: usize) -> Vec<Scalar> {
+    let mut circulant = vec![Scalar::zero(); 2 * size];
+    let coeffs = polynomial;
 
-    // Construct the matrix from coefficients
-    let mut coeff = coefficients.to_vec();
-    coeff.reverse();
-
-    for i in 0..d {
-        matrix[i] = coeff.clone();
-        coeff.pop();
-        coeff.insert(0, Scalar::zero());
+    if size == coeffs.len() - 1 {
+        circulant[0] = *coeffs.last().unwrap();
+        circulant[size] = *coeffs.last().unwrap();
+        circulant[size + 1..size + 1 + coeffs.len() - 2]
+            .copy_from_slice(&coeffs[1..coeffs.len() - 1]);
+    } else {
+        circulant[size + 1..size + 1 + coeffs.len() - 1].copy_from_slice(&coeffs[1..]);
     }
 
-    // Perform matrix-vector multiplication
-    for i in 0..d {
-        for j in 0..d {
-            result[i] += tau_powers[j].mul(matrix[i][j]);
-        }
-    }
-
-    result
+    circulant
 }
 
-/// Computes the Lagrange interpolation polynomial for given roots and values
-pub fn lagrange_interpolation(roots: &[Scalar], values: &[Scalar]) -> Vec<Scalar> {
-    let n = roots.len();
-    let mut coefficients = vec![Scalar::zero(); n];
-
-    for i in 0..n {
-        let mut basis_poly = vec![Scalar::from(1)];
-        
-        for j in 0..n {
-            if i != j {
-                let mut new_basis_poly = vec![Scalar::zero(); basis_poly.len() + 1];
-                for k in 0..basis_poly.len() {
-                    new_basis_poly[k] -= basis_poly[k] * roots[j];
-                    new_basis_poly[k + 1] += basis_poly[k];
-                }
-                let denom = roots[i] - roots[j];
-                for coeff in &mut new_basis_poly {
-                    *coeff = (*coeff / denom).unwrap();
-                }
-                basis_poly = new_basis_poly;
-            }
-        }
-
-        for (k, coeff) in basis_poly.iter().enumerate() {
-            coefficients[k] += *coeff * values[i];
-        }
-    }
-
-    coefficients
-}
-
-
-/// Multiplies a Toeplitz matrix with a vector using FFT
 pub fn multiply_toeplitz_with_v(
-    coefficients: &[Scalar],
-    tau_powers: &[G1Element],
+    polynomial: &[Scalar],
+    v: &[G1Element],
+    size: usize,
 ) -> Vec<G1Element> {
-    let d = coefficients.len();
-    let domain = BLS12381Domain::new(2 * d).unwrap();
-    let mut result = vec![G1Element::zero(); d];
+    let m = polynomial.len() - 1;
+    let size = std::cmp::max(size, m);
 
-    // Construct a_2n vector based on Toeplitz matrix properties
-    let mut a_2n = vec![Scalar::zero(); 2 * d];
-    a_2n[0] = coefficients[d - 1];
-    a_2n[d] = coefficients[d - 1];
-    for i in 0..d - 1 {
-        a_2n[d + 1 + i] = coefficients[i];
+    let domain = BLS12381Domain::new(2 * size).unwrap();
+
+    let size = domain.size() / 2;
+    let mut circulant = build_circulant(polynomial, size);
+
+    let mut tmp: Vec<G1Element> = Vec::with_capacity(domain.size());
+
+    for _ in 0..(size - v.len()) {
+        tmp.push(G1Element::zero());
     }
 
-    // Padding the tau_powers to match the length of a_2n
-    let mut padded_x = vec![G1Element::zero(); 2 * d];
-    for i in 0..d {
-        padded_x[i] = tau_powers[i];
+    for i in v.iter().rev() {
+        tmp.push(*i);
     }
 
-    // Performing FFT on both vectors
-    let v_vec = domain.fft(&a_2n);
-    domain.fft_in_place_g1(&mut padded_x);
-    let y_vec = padded_x.clone();
+    tmp.resize(domain.size(), G1Element::zero());
+    domain.fft_in_place_g1(&mut tmp);
+    let circulant_fft = domain.fft(&mut circulant);
 
-    // Element-wise multiplication in the frequency domain
-    let mut fft_result: Vec<G1Element> = v_vec.iter()
-        .zip(y_vec.iter())
-        .map(|(a, b)| b.mul(*a))
-        .collect();
-    
-    // Inverse FFT to get the result in the time domain
-    domain.ifft_in_place_g1(&mut fft_result);
-
-    for i in 0..d {
-        result[i] = fft_result[i];
+    for (i, j) in tmp.iter_mut().zip(circulant_fft.iter()) {
+        *i = i.mul(*j);
     }
 
+    domain.ifft_in_place_g1(&mut tmp);
+    let mut result = vec![G1Element::zero(); size];
+    for i in 0..size {
+        result[i] = tmp[i];
+    }
     result
 }
 
-/// Struct for KZG commitments using Tabular Domain Feist-Khovratovich technique
 #[derive(Clone)]
 pub struct KZGTabDFK {
     domain: BLS12381Domain,
@@ -129,7 +77,6 @@ pub struct KZGTabDFK {
 impl KZG for KZGTabDFK {
     type G = G1Element;
 
-    /// Creates a new KZGTabDFK instance with a random tau
     fn new(n: usize) -> FastCryptoResult<Self> {
         let domain = BLS12381Domain::new(n)?;
         let n_dom = domain.size();
@@ -183,7 +130,6 @@ impl KZG for KZGTabDFK {
         })
     }
 
-    /// Commits to a vector using the KZG commitment scheme
     fn commit(&self, v: &[Scalar]) -> G1Element {
         let mut padded_v = vec![Scalar::zero(); self.domain.size()];
         for i in 0..v.len() {
@@ -192,7 +138,6 @@ impl KZG for KZGTabDFK {
         G1Element::multi_scalar_mul(&padded_v, &self.l_vec).unwrap()
     }
 
-    /// Opens a KZG commitment at a specific index
     fn open(&self, v: &[Scalar], index: usize) -> G1Element {
         let mut open = G1Element::zero();
         for j in 0..v.len() {
@@ -215,39 +160,20 @@ impl KZG for KZGTabDFK {
         open
     }
 
-    /// Opens a KZG commitment at multiple indices
     fn open_all(&self, v: &[Scalar], indices: Vec<usize>) -> Vec<G1Element> {
-        let mut roots = vec![Scalar::zero(); v.len()];
-        for i in 0..v.len() {
-            roots[i] = self.domain.element(i);
-        }
-    
-        let poly = lagrange_interpolation(&roots, &v);
-    
-        let degree = poly.len() - 1;
-        let mut t = self.tau_powers_g1.clone();
-        t.truncate(degree);
-        t.reverse(); // [t^d-1], ... [1]
-    
-        let mut test_poly = poly.clone();
-        test_poly.reverse();
-        test_poly.truncate(degree);
-        test_poly.reverse();
-    
-        let mut h = compute_matrix_vector_multiplication(&test_poly, &t);
-    
-        let mut result_eff = vec![G1Element::zero(); self.domain.size()];
-        for i in 0..degree {
-            result_eff[i] = h[i];
-        }
-    
-        self.domain.fft_in_place_g1(&mut result_eff);
-    
-        result_eff
-    }
-    
+        let domain = &self.domain;
 
-    /// Verifies a KZG opening
+        let poly = domain.ifft(&v);
+        let poly_degree = poly.len() - 1;
+        let mut t = self.tau_powers_g1.clone();
+        t.truncate(poly_degree);
+
+        let mut h = multiply_toeplitz_with_v(&poly, &t, domain.size());
+        domain.fft_in_place_g1(&mut h);
+
+        h
+    }
+
     fn verify(
         &self,
         index: usize,
@@ -373,9 +299,9 @@ mod tests {
     #[test]
     fn test_kzg_commit_open_all() {
         let mut rng = rand::thread_rng();
-        let n = 5;
+        let n = 8;
         let kzg = KZGTabDFK::new(n).unwrap();
-        let v: Vec<Scalar> = (0..n).map(|_| OtherScalar::rand(&mut rng)).collect();
+        let v: Vec<Scalar> = (0..n).map(|_| OtherScalar::rand(&mut rng)). collect();
         let commitment = kzg.commit(&v);
         let indices: Vec<usize> = (0..n).collect();
         let mut open_values = kzg.open_all(&v, indices.clone());
@@ -386,24 +312,5 @@ mod tests {
             let is_valid = kzg.verify(indices[i], &v[indices[i]], &commitment, open_value);
             assert!(is_valid, "Verification of the opening should succeed for index {}", i);
         }
-    }
-
-    #[test]
-    fn test_mutliply_with_toeplitz() {
-        let v_scalar = vec![
-            Scalar::from(1), Scalar::from(2), Scalar::from(3), Scalar::from(4),
-            Scalar::from(4), Scalar::from(4), Scalar::from(4), Scalar::from(4)
-        ];
-
-        let tau = Scalar::rand(&mut thread_rng());
-
-        let tau_powers_g1: Vec<G1Element> = itertools::iterate(G1Element::generator(), |g| g.mul(tau))
-            .take(8)
-            .collect();
-
-        let h_alin = multiply_toeplitz_with_v(&v_scalar, &tau_powers_g1);
-        let h_mult = compute_matrix_vector_multiplication(&v_scalar, &tau_powers_g1);
-
-        assert!(h_alin == h_mult, "Toeplitz multiplication mismatch.");
     }
 }
