@@ -18,19 +18,34 @@ fn add_vectors(v1: Vec<G1Element>, v2: Vec<G1Element>, v3: Vec<G1Element>) -> Ve
 }
 
 /// Performs sparse matrix-vector multiplication
-fn sparse_c_matrix_vector_multiply(vector: &Vec<Scalar>, n: usize) -> Vec<Scalar> {
-    let mut result = vec![Scalar::zero(); n];
+fn sparse_c_matrix_vector_multiply(vector: &Vec<G1Element>, n: usize) -> Vec<G1Element> {
+    let mut result = vec![G1Element::zero(); n];
 
     // Handle the special element in the first row, last column
-    result[0] += -((Scalar::from((n - 1) as u128)) / (Scalar::from(2 as u128))).unwrap() * vector[n - 1];
+    result[0] = vector[n - 1].mul(-((Scalar::from((n - 1) as u128)) / (Scalar::from(2 as u128))).unwrap());
 
     // Handle the diagonal elements below the main diagonal
     for i in 1..n {
-        result[i] += (-Scalar::from(i as u128) + (Scalar::from((n + 1) as u128) / Scalar::from(2u128)).unwrap()) * vector[i - 1];
+        result[i] = vector[i - 1].mul(-Scalar::from(i as u128) + (Scalar::from((n + 1) as u128) / Scalar::from(2u128)).unwrap());
     }
 
     result
 }
+
+fn sparse_d_matrix_vector_multiply(vector: &Vec<G1Element>, n: usize) -> Vec<G1Element> {
+    let mut result = vec![G1Element::zero(); n];
+
+    // Handle the special element in the first row, last column
+    result[0] = vector[n - 1].mul(((Scalar::from((n - 1) as u128)) / (Scalar::from(2 as u128))).unwrap());
+
+    // Handle the diagonal elements below the main diagonal
+    for i in 1..n {
+        result[i] = vector[i - 1].mul(Scalar::from(i as u128) - (Scalar::from((n + 1) as u128) / Scalar::from(2u128)).unwrap());
+    }
+
+    result
+}
+
 
 /// Multiplies two matrices
 fn matrix_multiply(a: &Vec<Vec<Scalar>>, b: &Vec<Vec<Scalar>>) -> Vec<Vec<Scalar>> {
@@ -229,33 +244,6 @@ impl KZG for KZGDeriv {
     fn open_all(&self, v: &[Scalar], indices: Vec<usize>) -> Vec<G1Element> {
         let n = v.len();
 
-        // Compute ColEDivHat matrix
-        let mut c_matrix = vec![vec![Scalar::zero(); n]; n];
-        for i in 0..n {
-            for j in 0..n {
-                if i == 0 && j == n - 1 {
-                    c_matrix[i][j] = -((Scalar::from((n - 1) as u128)) / (Scalar::from(2 as u128))).unwrap();
-                } else if j + 1 == i && i >= 1 && i < n {
-                    c_matrix[i][j] = -Scalar::from(i as u128) + (Scalar::from((n + 1) as u128) / Scalar::from(2u128)).unwrap();
-                } else {
-                    c_matrix[i][j] = Scalar::zero();
-                }
-            }
-        }
-
-        // Compute D matrix
-        let mut d_matrix = vec![vec![Scalar::zero(); n]; n];
-        for i in 0..n {
-            for j in 0..n {
-                if i == 0 && j == n - 1 {
-                    d_matrix[i][j] = ((Scalar::from((n - 1) as u128)) / (Scalar::from(2 as u128))).unwrap();
-                } else if j + 1 == i && i >= 1 && i < n {
-                    d_matrix[i][j] = Scalar::from(i as u128) - (Scalar::from((n + 1) as u128) / Scalar::from(2u128)).unwrap();
-                } else {
-                    d_matrix[i][j] = Scalar::zero();
-                }
-            }
-        }
 
         // Compute tau * Dhatv
         let idftv = self.domain.ifft(&v);
@@ -269,7 +257,7 @@ impl KZG for KZGDeriv {
         // Compute ColEDiv.tau*v
         let mut powtau = self.w_vec.clone();
         self.domain.fft_in_place_g1(&mut powtau);
-        let mut col_hat_dft_tau: Vec<G1Element> = multiply_matrix_vector(&c_matrix, &powtau);
+        let mut col_hat_dft_tau: Vec<G1Element> = sparse_c_matrix_vector_multiply(&powtau, powtau.len());
         self.domain.ifft_in_place_g1(&mut col_hat_dft_tau);
         let result2: Vec<G1Element> = col_hat_dft_tau.iter()
             .zip(v.iter())
@@ -283,7 +271,7 @@ impl KZG for KZGDeriv {
             .collect();
 
         self.domain.fft_in_place_g1(&mut mult);
-        let mut diadiv_idft_tau_v: Vec<G1Element> = multiply_matrix_vector(&d_matrix, &mult);
+        let mut diadiv_idft_tau_v: Vec<G1Element> = sparse_d_matrix_vector_multiply(&mult,mult.len());
         self.domain.ifft_in_place_g1(&mut diadiv_idft_tau_v);
 
         let result3 = diadiv_idft_tau_v.clone();
