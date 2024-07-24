@@ -1,0 +1,23 @@
+[package]
+name = "fastcrypto-kzg"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+fastcrypto = { git = "https://github.com/MystenLabs/fastcrypto", rev = "631bbc252cde9b5deccd5851795e34f399efd91d" }
+fastcrypto-zkp = { git = "https://github.com/MystenLabs/fastcrypto", rev = "631bbc252cde9b5deccd5851795e34f399efd91d" }
+ark-poly = "0.4.2"
+ark-bls12-381 = { version = "0.4.0", default-features = false, features = ["curve"] }
+ark-ff = "0.4.2"
+ark-ec = "0.4.2"
+rand = "0.8.4"
+itertools = "0.13.0"
+rayon = "1.5"
+nalgebra = "0.30.1"
+
+[dev-dependencies]
+criterion = "0.5.1"
+
+[[bench]]
+name = "kzg"
+harness = false
