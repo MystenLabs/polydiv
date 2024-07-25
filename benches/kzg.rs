@@ -12,7 +12,7 @@ use rand::{thread_rng, Rng};
 // Adjust the imports based on your actual project structure
 
 fn kzg_single<K: KZG, M: Measurement>(name: &str, c: &mut BenchmarkGroup<M>) {
-    let input_sizes = [16, 32, 64, 128, 256, 512, 1024, 2048];
+    let input_sizes = [16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192];
 
     for &size in &input_sizes {
         c.bench_function(format!("{}/new/{}", name, size), |b| {

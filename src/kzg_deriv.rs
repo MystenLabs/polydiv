@@ -17,6 +17,7 @@ fn add_vectors(v1: Vec<G1Element>, v2: Vec<G1Element>, v3: Vec<G1Element>) -> Ve
         .collect()
 }
 
+
 /// Performs sparse matrix-vector multiplication
 fn sparse_c_matrix_vector_multiply(vector: &Vec<G1Element>, n: usize) -> Vec<G1Element> {
     let mut result = vec![G1Element::zero(); n];
@@ -47,40 +48,7 @@ fn sparse_d_matrix_vector_multiply(vector: &Vec<G1Element>, n: usize) -> Vec<G1E
 }
 
 
-/// Multiplies two matrices
-fn matrix_multiply(a: &Vec<Vec<Scalar>>, b: &Vec<Vec<Scalar>>) -> Vec<Vec<Scalar>> {
-    let rows_a = a.len();
-    let cols_a = a[0].len();
-    let cols_b = b[0].len();
 
-    let mut result = vec![vec![Scalar::zero(); cols_b]; rows_a];
-
-    for i in 0..rows_a {
-        for j in 0..cols_b {
-            for k in 0..cols_a {
-                result[i][j] += a[i][k] * b[k][j];
-            }
-        }
-    }
-
-    result
-}
-
-/// Multiplies a matrix of scalars by a vector of scalars
-fn multiply_matrix_scalar_vector(matrix: &[Vec<Scalar>], v: &[Scalar]) -> Vec<Scalar> {
-    let n = matrix.len();
-    let mut result = vec![Scalar::zero(); n];
-
-    for i in 0..n {
-        for j in 0..v.len() {
-            if matrix[i][j] != Scalar::zero() {
-                result[i] = result[i] + matrix[i][j].mul(v[j]);
-            }
-        }
-    }
-
-    result
-}
 
 /// Multiplies a diagonal matrix by a vector
 fn multiply_d_matrix_by_vector(vector: &[Scalar]) -> Vec<Scalar> {
@@ -94,18 +62,7 @@ fn multiply_d_matrix_by_vector(vector: &[Scalar]) -> Vec<Scalar> {
     result
 }
 
-/// Multiplies a matrix of scalars by a vector of group elements
-fn multiply_matrix_vector(matrix: &[Vec<Scalar>], v: &[G1Element]) -> Vec<G1Element> {
-    let n = v.len();
-    let mut result = vec![G1Element::zero(); n];
 
-    for i in 0..n {
-        let scalars = &matrix[i];
-        result[i] = G1Element::multi_scalar_mul(&scalars, &v).unwrap();
-    }
-
-    result
-}
 
 /// Struct for KZG commitment scheme using derived elements
 #[derive(Clone)]
@@ -115,9 +72,7 @@ pub struct KZGDeriv {
     omega: Scalar,
     g2_tau: G2Element,
     w_vec: Vec<G1Element>,
-    check_w_vec: Vec<G1Element>,
     u_vec: Vec<G1Element>,
-    tau_powers_g1: Vec<G1Element>,
 }
 
 impl KZGDeriv {
@@ -160,8 +115,13 @@ impl KZG for KZGDeriv {
             .map(|s| g.mul(s))
             .collect();
 
+        
+
         let mut omega_i = Scalar::generator();
-        let mut u_vec = (0..n)
+
+        // compute uvec using w_vec - original implementation 
+
+        let mut u_vec: Vec<G1Element> = (0..n)
             .map(|i| {
                 let l_i_minus_1 = w_vec[i] - G1Element::generator();
                 let denom = tau - omega_i;
@@ -173,13 +133,13 @@ impl KZG for KZGDeriv {
                 u_i
             })
             .collect();
+    
+        
 
         let omega = domain.element(1);
 
-        let tau_powers_g1: Vec<G1Element> = tau_powers_g.iter().map(|x| g.mul(x)).collect();
 
-        let mut check_w_vec = tau_powers_g1.clone();
-        domain.ifft_in_place_g1(&mut check_w_vec);
+
 
         Ok(Self {
             domain,
@@ -187,9 +147,7 @@ impl KZG for KZGDeriv {
             omega,
             g2_tau,
             w_vec,
-            check_w_vec,
             u_vec,
-            tau_powers_g1
         })
     }
 
