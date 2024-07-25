@@ -1,5 +1,4 @@
 import json
-import csv
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -41,6 +40,10 @@ for files in benchmark_files:
         short_function_id = f'{kzg_variant}/{function_name}/{size}'
     else:
         short_function_id = function_id
+
+    # Skip KZGFK functions
+    if kzg_variant == 'KZGFK':
+        continue
     
     result = {
         'kzg_variant': kzg_variant,
@@ -68,7 +71,7 @@ for function_name, results in results_by_function.items():
     # Plot the benchmark results
     plt.figure(figsize=(12, 8))
 
-    colors = {'KZG': 'r', 'KZGFK': 'g', 'KZGDeriv': 'b', 'KZGTabDFK': 'm'}
+    colors = {'KZG': 'r', 'KZGDeriv': 'b', 'KZGTabDFK': 'm'}
     for kzg_variant in df['kzg_variant'].unique():
         subset = df[df['kzg_variant'] == kzg_variant]
         plt.plot(subset['size'], subset['mean'], label=kzg_variant, color=colors.get(kzg_variant, 'k'), marker='o', linewidth=4, markersize=6)
@@ -79,7 +82,7 @@ for function_name, results in results_by_function.items():
     plt.title(f'{function_name.capitalize()} Benchmark Results', fontsize=16, fontweight='bold')
     plt.legend(fontsize=16)
     plt.grid(False)
-    plt.xticks([16, 32, 64, 128, 256, 512, 1024, 2048], fontsize=12, fontweight='bold')
+    plt.xticks([16, 512, 1024, 2048, 4096, 8192], fontsize=12, fontweight='bold')
     plt.yticks(fontsize=16, fontweight='bold')
     plt.tight_layout()
     plt.savefig(f'{function_name}_results.png')
