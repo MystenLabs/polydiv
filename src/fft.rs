@@ -45,7 +45,8 @@ pub trait FFTDomain: Sized {
         v_hat.copy_from_slice(&result);
     }
 
-    /// Get the i-th element of the domain. This is the n-th root of unity to the index-th power.
+    /// Get the i-th element of the domain which is the n-th root of unity to the index-th power.
+    /// This may be computed on request so it is not suitable for repeated calls.
     fn element(&self, index: usize) -> Self::ScalarType;
 
     /// Get the size of the domain.

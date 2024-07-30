@@ -74,19 +74,7 @@ pub struct KZGDeriv {
 impl KZGDeriv {
     /// Computes the omega^index element
     fn element(&self, index: usize) -> Scalar {
-        if index > self.n {
-            return self.element(index & self.n);
-        } else if index == 0 {
-            return Scalar::generator();
-        } else if index == 1 {
-            return self.omega;
-        }
-
-        let half = self.element(index / 2);
-        if index % 2 == 0 {
-            return half * half;
-        }
-        half * half * self.omega
+        self.domain.element(index)
     }
 }
 
