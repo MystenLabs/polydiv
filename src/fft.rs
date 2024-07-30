@@ -1,8 +1,8 @@
 use std::ops::{Add, Mul, Neg, Sub};
 
 use ark_bls12_381::Fr;
-use ark_ff::{BigInteger, PrimeField};
 use ark_ff::Field;
+use ark_ff::{BigInteger, PrimeField};
 use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
 use fastcrypto::error::{FastCryptoError, FastCryptoResult};
 use fastcrypto::groups::bls12381::Scalar;
@@ -142,8 +142,8 @@ fn fft_g1<G: GroupElement>(v: &[G], root_of_unity: &<G as GroupElement>::ScalarT
 mod tests {
     use std::ops::Mul;
 
-    use fastcrypto::groups::{GroupElement, Scalar as OtherScalar};
     use fastcrypto::groups::bls12381::{G1Element, Scalar};
+    use fastcrypto::groups::{GroupElement, Scalar as OtherScalar};
 
     use crate::fft::{BLS12381Domain, FFTDomain};
 

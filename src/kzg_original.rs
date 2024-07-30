@@ -177,7 +177,11 @@ mod tests {
 
         for (i, open_value) in open_values.iter().enumerate() {
             let is_valid = kzg.verify(indices[i], &v[indices[i]], &commitment, open_value);
-            assert!(is_valid, "Verification of the opening should succeed for index {}", i);
+            assert!(
+                is_valid,
+                "Verification of the opening should succeed for index {}",
+                i
+            );
         }
     }
 }
