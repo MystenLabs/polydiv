@@ -107,19 +107,34 @@ fn arkworks_to_fastcrypto(f: &Fr) -> Scalar {
     Scalar::from_byte_array(&bytes).unwrap()
 }
 
-/// FFT function for G1 elements
-fn fft_group<G: GroupElement>(v: &[G], root_of_unity: &<G as GroupElement>::ScalarType) -> Vec<G> {
-    let n = v.len();
+fn fft_group_offset<G: GroupElement>(
+    v: &[G],
+    offset: usize,
+    step: usize,
+    n: usize,
+    root_of_unity: &<G as GroupElement>::ScalarType,
+) -> Vec<G> {
     if n <= 1 {
-        return v.to_vec();
+        return vec![v[offset]];
     }
 
     let half_n = n / 2;
-    let even: Vec<G> = v.iter().step_by(2).cloned().collect();
-    let odd: Vec<G> = v.iter().skip(1).step_by(2).cloned().collect();
 
-    let even_fft = fft_group(&even, &root_of_unity.mul(root_of_unity));
-    let odd_fft = fft_group(&odd, &root_of_unity.mul(root_of_unity));
+    // TODO: This implicitly assumes that n is even
+    let even_fft = fft_group_offset(
+        v,
+        offset,
+        2 * step,
+        n - half_n,
+        &root_of_unity.mul(root_of_unity),
+    );
+    let odd_fft = fft_group_offset(
+        v,
+        offset + step,
+        2 * step,
+        half_n,
+        &root_of_unity.mul(root_of_unity),
+    );
 
     let mut omega = G::ScalarType::from(1);
     let mut result = vec![G::zero(); n];
@@ -132,6 +147,11 @@ fn fft_group<G: GroupElement>(v: &[G], root_of_unity: &<G as GroupElement>::Scal
     }
 
     result
+}
+
+/// FFT function for G1 elements
+fn fft_group<G: GroupElement>(v: &[G], root_of_unity: &<G as GroupElement>::ScalarType) -> Vec<G> {
+    fft_group_offset(v, 0, 1, v.len(), root_of_unity)
 }
 
 #[cfg(test)]
