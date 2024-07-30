@@ -211,9 +211,9 @@ impl KZG for KZGDeriv {
             sparse_d_matrix_vector_multiply(&mult, mult.len());
         self.domain.ifft_in_place_group(&mut diadiv_idft_tau_v);
 
-        let result3 = diadiv_idft_tau_v.clone();
+        let result3 = diadiv_idft_tau_v;
 
-        let result = add_vectors(result1.clone(), result2.clone(), result3.clone());
+        let result = add_vectors(result1, result2, result3);
 
         result
     }
