@@ -1,4 +1,4 @@
-use std::ops::{AddAssign, Mul, SubAssign};
+use std::ops::Mul;
 use std::sync::{Arc, Mutex};
 
 use fastcrypto::error::FastCryptoResult;
@@ -23,7 +23,7 @@ fn add_vectors(v1: Vec<G1Element>, v2: Vec<G1Element>, v3: Vec<G1Element>) -> Ve
 /// Performs sparse matrix-vector multiplication
 fn sparse_c_matrix_vector_multiply(vector: &Vec<G1Element>, n: usize) -> Vec<G1Element> {
     let two_inverse = Scalar::from(2u128).inverse().unwrap();
-    let mut coefficient = Scalar::from((n + 1) as u128) * two_inverse;
+    let coefficient = Scalar::from((n + 1) as u128) * two_inverse;
 
     (0..n)
         .map(|i| {
@@ -38,7 +38,7 @@ fn sparse_c_matrix_vector_multiply(vector: &Vec<G1Element>, n: usize) -> Vec<G1E
 
 fn sparse_d_matrix_vector_multiply(vector: &Vec<G1Element>, n: usize) -> Vec<G1Element> {
     let two_inverse = Scalar::from(2u128).inverse().unwrap();
-    let mut coefficient = -Scalar::from((n + 1) as u128) * two_inverse;
+    let coefficient = -Scalar::from((n + 1) as u128) * two_inverse;
 
     (0..n)
         .map(|i| {
@@ -244,7 +244,7 @@ impl KZG for KZGDeriv {
 
     fn update_open_i(
         &self,
-        open: &mut G1Element,
+        open: &G1Element,
         index: usize,
         old_v_i: &Scalar,
         new_v_i: &Scalar,
@@ -254,7 +254,7 @@ impl KZG for KZGDeriv {
 
     fn update_open_j(
         &self,
-        open: &mut G1Element,
+        open: &G1Element,
         index: usize,
         index_j: usize,
         old_v_j: &Scalar,

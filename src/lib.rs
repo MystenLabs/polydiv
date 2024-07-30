@@ -40,7 +40,7 @@ pub trait KZG: Sized + Clone {
 
     fn update_open_i(
         &self,
-        open: &mut Self::G,
+        open: &Self::G,
         index: usize,
         old_v_i: &<Self::G as GroupElement>::ScalarType,
         new_v_i: &<Self::G as GroupElement>::ScalarType,
@@ -48,7 +48,7 @@ pub trait KZG: Sized + Clone {
 
     fn update_open_j(
         &self,
-        open: &mut Self::G,
+        open: &Self::G,
         index: usize,
         index_j: usize,
         old_v_j: &<Self::G as GroupElement>::ScalarType,

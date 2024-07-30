@@ -191,7 +191,7 @@ impl KZG for KZGFK {
 
     fn update_open_i(
         &self,
-        open: &mut G1Element,
+        open: &G1Element,
         _index: usize,
         _old_v_i: &Scalar,
         _new_v_i: &Scalar,
@@ -201,7 +201,7 @@ impl KZG for KZGFK {
 
     fn update_open_j(
         &self,
-        open: &mut G1Element,
+        open: &G1Element,
         _index: usize,
         _index_j: usize,
         _old_v_j: &Scalar,
