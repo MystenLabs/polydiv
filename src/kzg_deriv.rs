@@ -1,4 +1,4 @@
-use std::ops::Mul;
+use std::ops::{AddAssign, Mul, SubAssign};
 use std::sync::{Arc, Mutex};
 
 use fastcrypto::error::FastCryptoResult;
@@ -13,9 +13,9 @@ use crate::KZG;
 
 /// Adds three vectors element-wise
 fn add_vectors(v1: Vec<G1Element>, v2: Vec<G1Element>, v3: Vec<G1Element>) -> Vec<G1Element> {
-    v1.into_iter()
-        .zip(v2.into_iter())
-        .zip(v3.into_iter())
+    v1.iter()
+        .zip(v2.iter())
+        .zip(v3.iter())
         .map(|((a, b), c)| a + b + c)
         .collect()
 }
@@ -26,14 +26,14 @@ fn sparse_c_matrix_vector_multiply(vector: &Vec<G1Element>, n: usize) -> Vec<G1E
 
     // Handle the special element in the first row, last column
     result[0] =
-        vector[n - 1].mul(-((Scalar::from((n - 1) as u128)) / (Scalar::from(2 as u128))).unwrap());
+        vector[n - 1].mul(-((Scalar::from((n - 1) as u128)) / (Scalar::from(2u128))).unwrap());
 
     // Handle the diagonal elements below the main diagonal
+    let mut coefficient = (Scalar::from((n + 1) as u128) / Scalar::from(2u128)).unwrap();
+    let one = Scalar::from(1u128);
     for i in 1..n {
-        result[i] = vector[i - 1].mul(
-            -Scalar::from(i as u128)
-                + (Scalar::from((n + 1) as u128) / Scalar::from(2u128)).unwrap(),
-        );
+        coefficient.sub_assign(&one);
+        result[i] = vector[i - 1].mul(coefficient);
     }
 
     result
@@ -44,14 +44,14 @@ fn sparse_d_matrix_vector_multiply(vector: &Vec<G1Element>, n: usize) -> Vec<G1E
 
     // Handle the special element in the first row, last column
     result[0] =
-        vector[n - 1].mul(((Scalar::from((n - 1) as u128)) / (Scalar::from(2 as u128))).unwrap());
+        vector[n - 1].mul(((Scalar::from((n - 1) as u128)) / (Scalar::from(2u128))).unwrap());
 
     // Handle the diagonal elements below the main diagonal
+    let mut coefficient = -(Scalar::from((n + 1) as u128) / Scalar::from(2u128)).unwrap();
+    let one = Scalar::from(1u128);
     for i in 1..n {
-        result[i] = vector[i - 1].mul(
-            Scalar::from(i as u128)
-                - (Scalar::from((n + 1) as u128) / Scalar::from(2u128)).unwrap(),
-        );
+        coefficient.add_assign(&one);
+        result[i] = vector[i - 1].mul(coefficient);
     }
 
     result
@@ -60,13 +60,9 @@ fn sparse_d_matrix_vector_multiply(vector: &Vec<G1Element>, n: usize) -> Vec<G1E
 /// Multiplies a diagonal matrix by a vector
 fn multiply_d_matrix_by_vector(vector: &[Scalar]) -> Vec<Scalar> {
     let n = vector.len();
-    let mut result = vec![Scalar::zero(); n];
-
-    for i in 0..n - 1 {
-        result[i] = Scalar::from((i + 1) as u128) * vector[i + 1];
-    }
-
-    result
+    (0..n - 1)
+        .map(|i| Scalar::from((i + 1) as u128) * vector[i + 1])
+        .collect()
 }
 
 /// Struct for KZG commitment scheme using derived elements
@@ -196,8 +192,6 @@ impl KZG for KZGDeriv {
 
     /// Opens a KZG commitment at multiple indices
     fn open_all(&self, v: &[Scalar], indices: Vec<usize>) -> Vec<G1Element> {
-        // Jonas: Why are the indices not used here?
-
         // Compute tau * Dhatv
         let idftv = self.domain.ifft(&v);
         let d_msm_idftv: Vec<Scalar> = multiply_d_matrix_by_vector(&idftv);

@@ -162,8 +162,6 @@ impl KZG for KZGTabDFK {
     }
 
     fn open_all(&self, v: &[Scalar], indices: Vec<usize>) -> Vec<G1Element> {
-        // Jonas: Why are the indices not used here?
-
         let domain = &self.domain;
 
         let poly = domain.ifft(&v);

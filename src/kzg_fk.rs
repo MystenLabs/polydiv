@@ -139,8 +139,6 @@ impl KZG for KZGFK {
 
     /// Opens a KZG commitment at multiple indices
     fn open_all(&self, v: &[Scalar], indices: Vec<usize>) -> Vec<G1Element> {
-        // Jonas: Why are the indices not used here?
-
         let poly = self.domain.ifft(v);
         let degree = poly.len() - 1;
 

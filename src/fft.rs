@@ -11,12 +11,15 @@ use fastcrypto::serde_helpers::ToFromByteArray;
 pub trait FFTDomain: Sized {
     type ScalarType: ScalarTrait;
 
+    /// Create a new domain with n elements.
     fn new(n: usize) -> FastCryptoResult<Self>;
 
+    /// Compute the FFT of a vector of scalars.
     fn fft(&self, v: &[Self::ScalarType]) -> Vec<Self::ScalarType> {
         fft_group(v, &self.element(1))
     }
 
+    /// Compute the IFFT of a vector of scalars.
     fn ifft(&self, v_hat: &[Self::ScalarType]) -> Vec<Self::ScalarType> {
         fft_group(v_hat, &self.element(self.size() - 1))
             .iter()
@@ -24,6 +27,7 @@ pub trait FFTDomain: Sized {
             .collect()
     }
 
+    /// Perform a FFT on elements of a group using the domains scalar type.
     fn fft_in_place_group<G: GroupElement<ScalarType = Self::ScalarType>>(&self, v: &mut [G]) {
         // TODO: Implement actual in-place algorithm.
         // TODO: Do we need padding?
@@ -31,6 +35,7 @@ pub trait FFTDomain: Sized {
         v.copy_from_slice(&result);
     }
 
+    /// Perform an IFFT on elements of a group using the domains scalar type.
     fn ifft_in_place_group<G: GroupElement<ScalarType = Self::ScalarType>>(&self, v_hat: &mut [G]) {
         let mut result = fft_group(&v_hat, &self.element(self.size() - 1));
         let n_inverse = self.size_inv();
@@ -40,10 +45,13 @@ pub trait FFTDomain: Sized {
         v_hat.copy_from_slice(&result);
     }
 
+    /// Get the i-th element of the domain. This is the n-th root of unity to the index-th power.
     fn element(&self, index: usize) -> Self::ScalarType;
 
+    /// Get the size of the domain.
     fn size(&self) -> usize;
 
+    /// Get the inverse of the size of the domain as a scalar.
     fn size_inv(&self) -> Self::ScalarType;
 }
 
