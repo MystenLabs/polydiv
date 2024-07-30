@@ -28,9 +28,7 @@ fn kzg_single<K: KZG, M: Measurement>(name: &str, c: &mut BenchmarkGroup<M>) {
             .collect();
 
         // Generate data for open_all
-        let open_all_data: Vec<BLSScalar> = (0..size)
-            .map(|_| BLSScalar::rand(&mut rng))
-            .collect();
+        let open_all_data: Vec<BLSScalar> = (0..size).map(|_| BLSScalar::rand(&mut rng)).collect();
 
         c.bench_function(format!("{}/commit/{}", name, size), |b| {
             b.iter(|| kzg.commit(&commit_data));
@@ -68,9 +66,21 @@ fn kzg_single<K: KZG, M: Measurement>(name: &str, c: &mut BenchmarkGroup<M>) {
 
         // Update the commitment
         c.bench_function(format!("{}/update/{}", name, size), |b| {
-            b.iter(|| kzg.update(&mut commitment, index_j, &commit_data[index_j], &new_v_index_j));
+            b.iter(|| {
+                kzg.update(
+                    &mut commitment,
+                    index_j,
+                    &commit_data[index_j],
+                    &new_v_index_j,
+                )
+            });
         });
-        let new_commitment = kzg.update(&mut commitment, index_j, &commit_data[index_j], &new_v_index_j);
+        let new_commitment = kzg.update(
+            &mut commitment,
+            index_j,
+            &commit_data[index_j],
+            &new_v_index_j,
+        );
 
         // Update the opening
         c.bench_function(format!("{}/update_open_j/{}", name, size), |b| {

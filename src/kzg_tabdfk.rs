@@ -1,10 +1,11 @@
 use std::ops::Mul;
+
 use fastcrypto::error::FastCryptoResult;
-use fastcrypto::error::FastCryptoError;
 use fastcrypto::groups::bls12381::{G1Element, G2Element, Scalar};
 use fastcrypto::groups::{GroupElement, MultiScalarMul, Pairing, Scalar as OtherScalar};
 use itertools::iterate;
 use rand::thread_rng;
+
 use crate::fft::{BLS12381Domain, FFTDomain};
 use crate::KZG;
 
@@ -48,14 +49,14 @@ pub fn multiply_toeplitz_with_v(
     }
 
     tmp.resize(domain.size(), G1Element::zero());
-    domain.fft_in_place_g1(&mut tmp);
+    domain.fft_in_place_group(&mut tmp);
     let circulant_fft = domain.fft(&mut circulant);
 
     for (i, j) in tmp.iter_mut().zip(circulant_fft.iter()) {
         *i = i.mul(*j);
     }
 
-    domain.ifft_in_place_g1(&mut tmp);
+    domain.ifft_in_place_group(&mut tmp);
     let mut result = vec![G1Element::zero(); size];
     for i in 0..size {
         result[i] = tmp[i];
@@ -66,7 +67,6 @@ pub fn multiply_toeplitz_with_v(
 #[derive(Clone)]
 pub struct KZGTabDFK {
     domain: BLS12381Domain,
-    a: G1Element,
     g2_tau: G2Element,
     u_vec: Vec<G1Element>,
     l_vec: Vec<G1Element>,
@@ -90,11 +90,13 @@ impl KZG for KZGTabDFK {
         let mut a_vec = vec![G1Element::zero(); n_dom];
         let mut u_vec = vec![G1Element::zero(); n_dom];
 
-        let tau_powers_g: Vec<Scalar> =
-            iterate(Scalar::generator(), |g| g * tau).take(n_dom).collect();
-        let tau_powers_g1: Vec<G1Element> = itertools::iterate(G1Element::generator(), |g| g.mul(tau))
+        let tau_powers_g: Vec<Scalar> = iterate(Scalar::generator(), |g| g * tau)
             .take(n_dom)
             .collect();
+        let tau_powers_g1: Vec<G1Element> =
+            itertools::iterate(G1Element::generator(), |g| g.mul(tau))
+                .take(n_dom)
+                .collect();
 
         let g = G1Element::generator();
         let l_vec: Vec<G1Element> = domain
@@ -122,7 +124,6 @@ impl KZG for KZGTabDFK {
         Ok(Self {
             domain,
             g2_tau,
-            a,
             u_vec,
             l_vec,
             a_vec,
@@ -161,6 +162,8 @@ impl KZG for KZGTabDFK {
     }
 
     fn open_all(&self, v: &[Scalar], indices: Vec<usize>) -> Vec<G1Element> {
+        // Jonas: Why are the indices not used here?
+
         let domain = &self.domain;
 
         let poly = domain.ifft(&v);
@@ -169,7 +172,7 @@ impl KZG for KZGTabDFK {
         t.truncate(poly_degree);
 
         let mut h = multiply_toeplitz_with_v(&poly, &t, domain.size());
-        domain.fft_in_place_g1(&mut h);
+        domain.fft_in_place_group(&mut h);
 
         h
     }
@@ -233,6 +236,7 @@ impl KZG for KZGTabDFK {
 mod tests {
     use fastcrypto::groups::bls12381::Scalar;
     use rand::Rng;
+
     use super::*;
 
     #[test]
@@ -301,7 +305,7 @@ mod tests {
         let mut rng = rand::thread_rng();
         let n = 8;
         let kzg = KZGTabDFK::new(n).unwrap();
-        let v: Vec<Scalar> = (0..n).map(|_| OtherScalar::rand(&mut rng)). collect();
+        let v: Vec<Scalar> = (0..n).map(|_| OtherScalar::rand(&mut rng)).collect();
         let commitment = kzg.commit(&v);
         let indices: Vec<usize> = (0..n).collect();
         let mut open_values = kzg.open_all(&v, indices.clone());
@@ -310,7 +314,11 @@ mod tests {
 
         for (i, open_value) in open_values.iter().enumerate() {
             let is_valid = kzg.verify(indices[i], &v[indices[i]], &commitment, open_value);
-            assert!(is_valid, "Verification of the opening should succeed for index {}", i);
+            assert!(
+                is_valid,
+                "Verification of the opening should succeed for index {}",
+                i
+            );
         }
     }
 }

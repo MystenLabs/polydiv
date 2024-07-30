@@ -1,7 +1,6 @@
 use fastcrypto::error::{FastCryptoError, FastCryptoResult};
 use fastcrypto::groups::bls12381::{G1Element, G2Element, Scalar};
 use fastcrypto::groups::{GroupElement, MultiScalarMul, Pairing, Scalar as OtherScalar};
-use fastcrypto::serde_helpers::ToFromByteArray;
 use rand::thread_rng;
 
 use crate::fft::{BLS12381Domain, FFTDomain};
@@ -177,7 +176,11 @@ mod tests {
 
         for (i, open_value) in open_values.iter().enumerate() {
             let is_valid = kzg.verify(indices[i], &v[indices[i]], &commitment, open_value);
-            assert!(is_valid, "Verification of the opening should succeed for index {}", i);
+            assert!(
+                is_valid,
+                "Verification of the opening should succeed for index {}",
+                i
+            );
         }
     }
 }

@@ -1,18 +1,14 @@
-use fastcrypto::error::{FastCryptoError, FastCryptoResult};
+use std::ops::Mul;
+
+use fastcrypto::error::FastCryptoResult;
 use fastcrypto::groups::bls12381::{G1Element, G2Element, Scalar};
-use fastcrypto::serde_helpers::ToFromByteArray;
 use fastcrypto::groups::{GroupElement, MultiScalarMul, Pairing, Scalar as OtherScalar};
 use rand::thread_rng;
-use ark_ff::FftField;
-use ark_poly::{Polynomial, EvaluationDomain};
-use ark_poly::polynomial::univariate::DensePolynomial as Poly;
-use std::ops::Mul;
 
 use crate::fft::{BLS12381Domain, FFTDomain};
 use crate::KZG;
 
-
-/// Computes the matrix-vector multiplication for testing purposes - 
+/// Computes the matrix-vector multiplication for testing purposes -
 // this is the function that is currently used for open_all
 fn compute_matrix_vector_multiplication(
     coefficients: &[Scalar],
@@ -65,17 +61,18 @@ pub fn multiply_toeplitz_with_v(
 
     // Performing FFT on both vectors
     let v_vec = domain.fft(&a_2n);
-    domain.fft_in_place_g1(&mut padded_x);
+    domain.fft_in_place_group(&mut padded_x);
     let y_vec = padded_x.clone();
 
     // Element-wise multiplication in the frequency domain
-    let mut fft_result: Vec<G1Element> = v_vec.iter()
+    let mut fft_result: Vec<G1Element> = v_vec
+        .iter()
         .zip(y_vec.iter())
         .map(|(a, b)| b.mul(*a))
         .collect();
-    
+
     // Inverse FFT to get the result in the time domain
-    domain.ifft_in_place_g1(&mut fft_result);
+    domain.ifft_in_place_group(&mut fft_result);
 
     for i in 0..d {
         result[i] = fft_result[i];
@@ -102,9 +99,10 @@ impl KZG for KZGFK {
 
         let tau = fastcrypto::groups::bls12381::Scalar::rand(&mut thread_rng());
 
-        let tau_powers_g1: Vec<G1Element> = itertools::iterate(G1Element::generator(), |g| g.mul(tau))
-            .take(n_dom)
-            .collect();
+        let tau_powers_g1: Vec<G1Element> =
+            itertools::iterate(G1Element::generator(), |g| g.mul(tau))
+                .take(n_dom)
+                .collect();
 
         let g2_tau = G2Element::generator().mul(tau);
 
@@ -135,12 +133,15 @@ impl KZG for KZGFK {
         G1Element::multi_scalar_mul(
             &quotient_coeffs,
             &self.tau_powers_g1[..quotient_coeffs.len()],
-        ).unwrap()
+        )
+        .unwrap()
     }
 
     /// Opens a KZG commitment at multiple indices
     fn open_all(&self, v: &[Scalar], indices: Vec<usize>) -> Vec<G1Element> {
-        let mut poly = self.domain.ifft(v);
+        // Jonas: Why are the indices not used here?
+
+        let poly = self.domain.ifft(v);
         let degree = poly.len() - 1;
 
         let mut t = self.tau_powers_g1.clone();
@@ -162,7 +163,7 @@ impl KZG for KZGFK {
             result[i] = h_test[i];
         }
 
-        self.domain.fft_in_place_g1(&mut result);
+        self.domain.fft_in_place_group(&mut result);
         result
     }
 
@@ -216,7 +217,7 @@ impl KZG for KZGFK {
 mod tests {
     use fastcrypto::groups::bls12381::Scalar;
     use rand::Rng;
-    use itertools::iterate;
+
     use super::*;
 
     #[test]
@@ -246,23 +247,34 @@ mod tests {
 
         for (i, open_value) in open_values.iter().enumerate() {
             let is_valid = kzg.verify(indices[i], &v[indices[i]], &commitment, open_value);
-            assert!(is_valid, "Verification of the opening should succeed for index {}", i);
+            assert!(
+                is_valid,
+                "Verification of the opening should succeed for index {}",
+                i
+            );
         }
     }
 
-    #[test] 
+    #[test]
     fn test_check_toeplitz() {
         let v_scalar = vec![
-            Scalar::from(1), Scalar::from(2), Scalar::from(3), Scalar::from(4),
-            Scalar::from(4), Scalar::from(4), Scalar::from(4), Scalar::from(4)
+            Scalar::from(1),
+            Scalar::from(2),
+            Scalar::from(3),
+            Scalar::from(4),
+            Scalar::from(4),
+            Scalar::from(4),
+            Scalar::from(4),
+            Scalar::from(4),
         ];
 
         let tau = Scalar::rand(&mut thread_rng());
 
-        let tau_powers_g1: Vec<G1Element> = itertools::iterate(G1Element::generator(), |g| g.mul(tau))
-            .take(8)
-            .collect();
-        
+        let tau_powers_g1: Vec<G1Element> =
+            itertools::iterate(G1Element::generator(), |g| g.mul(tau))
+                .take(8)
+                .collect();
+
         let h_alin = multiply_toeplitz_with_v(&v_scalar, &tau_powers_g1);
         let h_mult = compute_matrix_vector_multiplication(&v_scalar, &tau_powers_g1);
 
