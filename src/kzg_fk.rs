@@ -138,7 +138,7 @@ impl KZG for KZGFK {
     }
 
     /// Opens a KZG commitment at multiple indices
-    fn open_all(&self, v: &[Scalar], indices: Vec<usize>) -> Vec<G1Element> {
+    fn open_all(&self, v: &[Scalar], indices: &[usize]) -> Vec<G1Element> {
         let poly = self.domain.ifft(v);
         let degree = poly.len() - 1;
 
@@ -239,7 +239,7 @@ mod tests {
         let v: Vec<Scalar> = (0..n).map(|_| OtherScalar::rand(&mut rng)).collect();
         let commitment = kzg.commit(&v);
         let indices: Vec<usize> = (0..n).collect();
-        let mut open_values = kzg.open_all(&v, indices.clone());
+        let mut open_values = kzg.open_all(&v, &indices);
 
         open_values.truncate(n);
 

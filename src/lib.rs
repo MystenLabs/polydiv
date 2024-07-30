@@ -20,7 +20,7 @@ pub trait KZG: Sized + Clone {
 
     fn open(&self, v: &[<Self::G as GroupElement>::ScalarType], index: usize) -> Self::G;
 
-    fn open_all(&self, v: &[Scalar], indices: Vec<usize>) -> Vec<Self::G>;
+    fn open_all(&self, v: &[Scalar], indices: &[usize]) -> Vec<Self::G>;
 
     fn verify(
         &self,

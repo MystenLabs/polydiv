@@ -174,7 +174,7 @@ impl KZG for KZGDeriv {
     }
 
     /// Opens a KZG commitment at multiple indices
-    fn open_all(&self, v: &[Scalar], indices: Vec<usize>) -> Vec<G1Element> {
+    fn open_all(&self, v: &[Scalar], indices: &[usize]) -> Vec<G1Element> {
         // Compute tau * Dhatv
         let idftv = self.domain.ifft(&v);
         let d_msm_idftv: Vec<Scalar> = multiply_d_matrix_by_vector(&idftv);
@@ -354,7 +354,7 @@ mod tests {
         let v: Vec<Scalar> = (0..n).map(|_| OtherScalar::rand(&mut rng)).collect();
         let commitment = kzg.commit(&v);
         let indices: Vec<usize> = (0..n).collect();
-        let open_values = kzg.open_all(&v, indices.clone());
+        let open_values = kzg.open_all(&v, &indices);
 
         for (i, open_value) in open_values.iter().enumerate() {
             let is_valid = kzg.verify(indices[i], &v[indices[i]], &commitment, open_value);
