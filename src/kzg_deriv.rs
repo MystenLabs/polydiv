@@ -22,46 +22,41 @@ fn add_vectors(v1: Vec<G1Element>, v2: Vec<G1Element>, v3: Vec<G1Element>) -> Ve
 
 /// Performs sparse matrix-vector multiplication
 fn sparse_c_matrix_vector_multiply(vector: &Vec<G1Element>, n: usize) -> Vec<G1Element> {
-    let mut result = vec![G1Element::zero(); n];
+    let two_inverse = Scalar::from(2u128).inverse().unwrap();
+    let mut coefficient = Scalar::from((n + 1) as u128) * two_inverse;
 
-    // Handle the special element in the first row, last column
-    result[0] =
-        vector[n - 1].mul(-((Scalar::from((n - 1) as u128)) / (Scalar::from(2u128))).unwrap());
-
-    // Handle the diagonal elements below the main diagonal
-    let mut coefficient = (Scalar::from((n + 1) as u128) / Scalar::from(2u128)).unwrap();
-    let one = Scalar::from(1u128);
-    for i in 1..n {
-        coefficient.sub_assign(&one);
-        result[i] = vector[i - 1].mul(coefficient);
-    }
-
-    result
+    (0..n)
+        .map(|i| {
+            if i == 0 {
+                vector[n - 1].mul(-Scalar::from((n - 1) as u128) * two_inverse)
+            } else {
+                vector[i - 1].mul(coefficient - Scalar::from(i as u128))
+            }
+        })
+        .collect()
 }
 
 fn sparse_d_matrix_vector_multiply(vector: &Vec<G1Element>, n: usize) -> Vec<G1Element> {
-    let mut result = vec![G1Element::zero(); n];
+    let two_inverse = Scalar::from(2u128).inverse().unwrap();
+    let mut coefficient = -Scalar::from((n + 1) as u128) * two_inverse;
 
-    // Handle the special element in the first row, last column
-    result[0] =
-        vector[n - 1].mul(((Scalar::from((n - 1) as u128)) / (Scalar::from(2u128))).unwrap());
-
-    // Handle the diagonal elements below the main diagonal
-    let mut coefficient = -(Scalar::from((n + 1) as u128) / Scalar::from(2u128)).unwrap();
-    let one = Scalar::from(1u128);
-    for i in 1..n {
-        coefficient.add_assign(&one);
-        result[i] = vector[i - 1].mul(coefficient);
-    }
-
-    result
+    (0..n)
+        .map(|i| {
+            if i == 0 {
+                vector[n - 1].mul((Scalar::from((n - 1) as u128)) * two_inverse)
+            } else {
+                vector[i - 1].mul(coefficient + Scalar::from(i as u128))
+            }
+        })
+        .collect()
 }
 
 /// Multiplies a diagonal matrix by a vector
 fn multiply_d_matrix_by_vector(vector: &[Scalar]) -> Vec<Scalar> {
-    let n = vector.len();
-    (0..n - 1)
-        .map(|i| Scalar::from((i + 1) as u128) * vector[i + 1])
+    vector[1..]
+        .iter()
+        .enumerate()
+        .map(|(i, v)| Scalar::from((i + 1) as u128) * v)
         .collect()
 }
 
