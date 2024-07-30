@@ -15,17 +15,10 @@ pub trait FFTDomain: Sized {
     fn new(n: usize) -> FastCryptoResult<Self>;
 
     /// Compute the FFT of a vector of scalars.
-    fn fft(&self, v: &[Self::ScalarType]) -> Vec<Self::ScalarType> {
-        fft_group(v, &self.element(1))
-    }
+    fn fft(&self, v: &[Self::ScalarType]) -> Vec<Self::ScalarType>;
 
     /// Compute the IFFT of a vector of scalars.
-    fn ifft(&self, v_hat: &[Self::ScalarType]) -> Vec<Self::ScalarType> {
-        fft_group(v_hat, &self.element(self.size() - 1))
-            .iter()
-            .map(|x| x.mul(&self.size_inv()))
-            .collect()
-    }
+    fn ifft(&self, v_hat: &[Self::ScalarType]) -> Vec<Self::ScalarType>;
 
     /// Perform a FFT on elements of a group using the domains scalar type.
     fn fft_in_place_group<G: GroupElement<ScalarType = Self::ScalarType>>(&self, v: &mut [G]) {
