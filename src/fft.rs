@@ -18,9 +18,9 @@ pub trait FFTDomain: Sized {
 
     fn ifft(&self, v_hat: &[Self::ScalarType]) -> Vec<Self::ScalarType>;
 
-    fn fft_in_place_g1<G: GroupElement<ScalarType = Self::ScalarType>>(&self, v: &mut [G]);
+    fn fft_in_place_group<G: GroupElement<ScalarType = Self::ScalarType>>(&self, v: &mut [G]);
 
-    fn ifft_in_place_g1<G: GroupElement<ScalarType = Self::ScalarType>>(&self, v_hat: &mut [G]);
+    fn ifft_in_place_group<G: GroupElement<ScalarType = Self::ScalarType>>(&self, v_hat: &mut [G]);
 
     fn element(&self, index: usize) -> Self::ScalarType;
 
@@ -62,24 +62,24 @@ impl FFTDomain for BLS12381Domain {
         result
     }
 
-    fn fft_in_place_g1<G: GroupElement<ScalarType = Self::ScalarType>>(&self, v: &mut [G]) {
+    fn fft_in_place_group<G: GroupElement<ScalarType = Self::ScalarType>>(&self, v: &mut [G]) {
         let mut padded_v = v.to_vec();
         if padded_v.len() < self.domain.size() {
             padded_v.resize(self.domain.size(), G::zero());
         }
         let root_of_unity = self.element(1);
-        let mut result = fft_g1(&padded_v, &root_of_unity);
+        let mut result = fft_group(&padded_v, &root_of_unity);
         v.copy_from_slice(&result[..v.len()]);
     }
 
-    fn ifft_in_place_g1<G: GroupElement<ScalarType = Self::ScalarType>>(&self, v: &mut [G]) {
+    fn ifft_in_place_group<G: GroupElement<ScalarType = Self::ScalarType>>(&self, v: &mut [G]) {
         let n = v.len();
         let root_of_unity = self.element(self.domain.size() - 1);
         let mut padded_v_hat = v.to_vec();
         if padded_v_hat.len() < self.domain.size() {
             padded_v_hat.resize(self.domain.size(), G::zero());
         }
-        let mut result = fft_g1(&padded_v_hat, &root_of_unity);
+        let mut result = fft_group(&padded_v_hat, &root_of_unity);
         let n_fr = Fr::from(n as u64);
         let inv_n_fr = n_fr.inverse().unwrap();
         let inv_n_scalar = arkworks_to_fastcrypto(&inv_n_fr);
@@ -112,7 +112,7 @@ fn arkworks_to_fastcrypto(f: &Fr) -> Scalar {
 }
 
 /// FFT function for G1 elements
-fn fft_g1<G: GroupElement>(v: &[G], root_of_unity: &<G as GroupElement>::ScalarType) -> Vec<G> {
+fn fft_group<G: GroupElement>(v: &[G], root_of_unity: &<G as GroupElement>::ScalarType) -> Vec<G> {
     let n = v.len();
     if n <= 1 {
         return v.to_vec();
@@ -122,8 +122,8 @@ fn fft_g1<G: GroupElement>(v: &[G], root_of_unity: &<G as GroupElement>::ScalarT
     let even: Vec<G> = v.iter().step_by(2).cloned().collect();
     let odd: Vec<G> = v.iter().skip(1).step_by(2).cloned().collect();
 
-    let even_fft = fft_g1(&even, &root_of_unity.mul(root_of_unity));
-    let odd_fft = fft_g1(&odd, &root_of_unity.mul(root_of_unity));
+    let even_fft = fft_group(&even, &root_of_unity.mul(root_of_unity));
+    let odd_fft = fft_group(&odd, &root_of_unity.mul(root_of_unity));
 
     let mut omega = G::ScalarType::from(1);
     let mut result = vec![G::zero(); n];
@@ -170,7 +170,7 @@ mod tests {
         let g = G1Element::generator();
         let v_group_elements: Vec<G1Element> = v_scalar.iter().map(|x| g.mul(x)).collect();
         let mut v_fft_g = v_group_elements.clone();
-        domain.fft_in_place_g1(&mut v_fft_g);
+        domain.fft_in_place_group(&mut v_fft_g);
         let v_fft = domain.fft(&v_scalar);
         let expected_v_fft_g: Vec<G1Element> = v_fft.iter().map(|x| g.mul(x)).collect();
         assert_eq!(v_fft_g, expected_v_fft_g);
@@ -192,7 +192,7 @@ mod tests {
         ];
         let v_group_elements: Vec<G1Element> = v_scalar.iter().map(|x| g.mul(x)).collect();
         let mut v_ifft_g = v_group_elements.clone();
-        domain.ifft_in_place_g1(&mut v_ifft_g);
+        domain.ifft_in_place_group(&mut v_ifft_g);
         let v_ifft = domain.ifft(&v_scalar);
         let expected_v_ifft_g: Vec<G1Element> = v_ifft.iter().map(|x| g.mul(x)).collect();
         assert_eq!(v_ifft_g, expected_v_ifft_g);

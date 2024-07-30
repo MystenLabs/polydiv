@@ -49,14 +49,14 @@ pub fn multiply_toeplitz_with_v(
     }
 
     tmp.resize(domain.size(), G1Element::zero());
-    domain.fft_in_place_g1(&mut tmp);
+    domain.fft_in_place_group(&mut tmp);
     let circulant_fft = domain.fft(&mut circulant);
 
     for (i, j) in tmp.iter_mut().zip(circulant_fft.iter()) {
         *i = i.mul(*j);
     }
 
-    domain.ifft_in_place_g1(&mut tmp);
+    domain.ifft_in_place_group(&mut tmp);
     let mut result = vec![G1Element::zero(); size];
     for i in 0..size {
         result[i] = tmp[i];
@@ -172,7 +172,7 @@ impl KZG for KZGTabDFK {
         t.truncate(poly_degree);
 
         let mut h = multiply_toeplitz_with_v(&poly, &t, domain.size());
-        domain.fft_in_place_g1(&mut h);
+        domain.fft_in_place_group(&mut h);
 
         h
     }

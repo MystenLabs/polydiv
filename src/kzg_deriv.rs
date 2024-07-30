@@ -212,10 +212,10 @@ impl KZG for KZGDeriv {
 
         // Compute ColEDiv.tau*v
         let mut powtau = self.w_vec.clone();
-        self.domain.fft_in_place_g1(&mut powtau);
+        self.domain.fft_in_place_group(&mut powtau);
         let mut col_hat_dft_tau: Vec<G1Element> =
             sparse_c_matrix_vector_multiply(&powtau, powtau.len());
-        self.domain.ifft_in_place_g1(&mut col_hat_dft_tau);
+        self.domain.ifft_in_place_group(&mut col_hat_dft_tau);
         let result2: Vec<G1Element> = col_hat_dft_tau
             .iter()
             .zip(v.iter())
@@ -230,10 +230,10 @@ impl KZG for KZGDeriv {
             .map(|(a, b)| a.mul(*b))
             .collect();
 
-        self.domain.fft_in_place_g1(&mut mult);
+        self.domain.fft_in_place_group(&mut mult);
         let mut diadiv_idft_tau_v: Vec<G1Element> =
             sparse_d_matrix_vector_multiply(&mult, mult.len());
-        self.domain.ifft_in_place_g1(&mut diadiv_idft_tau_v);
+        self.domain.ifft_in_place_group(&mut diadiv_idft_tau_v);
 
         let result3 = diadiv_idft_tau_v.clone();
 

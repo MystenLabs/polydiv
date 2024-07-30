@@ -64,7 +64,7 @@ pub fn multiply_toeplitz_with_v(
 
     // Performing FFT on both vectors
     let v_vec = domain.fft(&a_2n);
-    domain.fft_in_place_g1(&mut padded_x);
+    domain.fft_in_place_group(&mut padded_x);
     let y_vec = padded_x.clone();
 
     // Element-wise multiplication in the frequency domain
@@ -75,7 +75,7 @@ pub fn multiply_toeplitz_with_v(
         .collect();
 
     // Inverse FFT to get the result in the time domain
-    domain.ifft_in_place_g1(&mut fft_result);
+    domain.ifft_in_place_group(&mut fft_result);
 
     for i in 0..d {
         result[i] = fft_result[i];
@@ -164,7 +164,7 @@ impl KZG for KZGFK {
             result[i] = h_test[i];
         }
 
-        self.domain.fft_in_place_g1(&mut result);
+        self.domain.fft_in_place_group(&mut result);
         result
     }
 
