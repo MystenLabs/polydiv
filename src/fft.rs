@@ -79,7 +79,7 @@ impl FFTDomain for BLS12381Domain {
             padded_v_hat.resize(self.domain.size(), G::zero());
         }
         let mut result = fft_group(&padded_v_hat, &root_of_unity);
-        let n_inverse = G::ScalarType::from(n as u128).inverse().unwrap();
+        let n_inverse = arkworks_to_fastcrypto(&self.domain.size_inv());
         for elem in result.iter_mut() {
             *elem = elem.mul(n_inverse);
         }
