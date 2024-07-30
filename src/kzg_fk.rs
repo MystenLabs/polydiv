@@ -138,9 +138,7 @@ impl KZG for KZGFK {
     }
 
     /// Opens a KZG commitment at multiple indices
-    fn open_all(&self, v: &[Scalar], indices: Vec<usize>) -> Vec<G1Element> {
-        // Jonas: Why are the indices not used here?
-
+    fn open_all(&self, v: &[Scalar], indices: &[usize]) -> Vec<G1Element> {
         let poly = self.domain.ifft(v);
         let degree = poly.len() - 1;
 
@@ -193,7 +191,7 @@ impl KZG for KZGFK {
 
     fn update_open_i(
         &self,
-        open: &mut G1Element,
+        open: &G1Element,
         _index: usize,
         _old_v_i: &Scalar,
         _new_v_i: &Scalar,
@@ -203,7 +201,7 @@ impl KZG for KZGFK {
 
     fn update_open_j(
         &self,
-        open: &mut G1Element,
+        open: &G1Element,
         _index: usize,
         _index_j: usize,
         _old_v_j: &Scalar,
@@ -241,7 +239,7 @@ mod tests {
         let v: Vec<Scalar> = (0..n).map(|_| OtherScalar::rand(&mut rng)).collect();
         let commitment = kzg.commit(&v);
         let indices: Vec<usize> = (0..n).collect();
-        let mut open_values = kzg.open_all(&v, indices.clone());
+        let mut open_values = kzg.open_all(&v, &indices);
 
         open_values.truncate(n);
 

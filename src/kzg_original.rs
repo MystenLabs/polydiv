@@ -90,8 +90,8 @@ impl KZG for KZGOriginal {
     }
 
     /// Opens a KZG commitment at multiple indices
-    fn open_all(&self, v: &[Scalar], indices: Vec<usize>) -> Vec<G1Element> {
-        indices.into_iter().map(|i| self.open(v, i)).collect()
+    fn open_all(&self, v: &[Scalar], indices: &[usize]) -> Vec<G1Element> {
+        indices.iter().map(|i| self.open(v, *i)).collect()
     }
 
     /// Verifies a KZG opening
@@ -124,7 +124,7 @@ impl KZG for KZGOriginal {
 
     fn update_open_i(
         &self,
-        open: &mut G1Element,
+        open: &G1Element,
         _index: usize,
         _old_v_i: &Scalar,
         _new_v_i: &Scalar,
@@ -134,7 +134,7 @@ impl KZG for KZGOriginal {
 
     fn update_open_j(
         &self,
-        open: &mut G1Element,
+        open: &G1Element,
         _index: usize,
         _index_j: usize,
         _old_v_j: &Scalar,
@@ -172,7 +172,7 @@ mod tests {
         let v: Vec<Scalar> = (0..n).map(|_| OtherScalar::rand(&mut rng)).collect();
         let commitment = kzg.commit(&v);
         let indices: Vec<usize> = (0..n).collect();
-        let open_values = kzg.open_all(&v, indices.clone());
+        let open_values = kzg.open_all(&v, &indices);
 
         for (i, open_value) in open_values.iter().enumerate() {
             let is_valid = kzg.verify(indices[i], &v[indices[i]], &commitment, open_value);

@@ -13,60 +13,51 @@ use crate::KZG;
 
 /// Adds three vectors element-wise
 fn add_vectors(v1: Vec<G1Element>, v2: Vec<G1Element>, v3: Vec<G1Element>) -> Vec<G1Element> {
-    v1.into_iter()
-        .zip(v2.into_iter())
-        .zip(v3.into_iter())
+    v1.iter()
+        .zip(v2.iter())
+        .zip(v3.iter())
         .map(|((a, b), c)| a + b + c)
         .collect()
 }
 
 /// Performs sparse matrix-vector multiplication
 fn sparse_c_matrix_vector_multiply(vector: &Vec<G1Element>, n: usize) -> Vec<G1Element> {
-    let mut result = vec![G1Element::zero(); n];
+    let two_inverse = Scalar::from(2u128).inverse().unwrap();
+    let coefficient = Scalar::from((n + 1) as u128) * two_inverse;
 
-    // Handle the special element in the first row, last column
-    result[0] =
-        vector[n - 1].mul(-((Scalar::from((n - 1) as u128)) / (Scalar::from(2 as u128))).unwrap());
-
-    // Handle the diagonal elements below the main diagonal
-    for i in 1..n {
-        result[i] = vector[i - 1].mul(
-            -Scalar::from(i as u128)
-                + (Scalar::from((n + 1) as u128) / Scalar::from(2u128)).unwrap(),
-        );
-    }
-
-    result
+    (0..n)
+        .map(|i| {
+            if i == 0 {
+                vector[n - 1].mul(-Scalar::from((n - 1) as u128) * two_inverse)
+            } else {
+                vector[i - 1].mul(coefficient - Scalar::from(i as u128))
+            }
+        })
+        .collect()
 }
 
 fn sparse_d_matrix_vector_multiply(vector: &Vec<G1Element>, n: usize) -> Vec<G1Element> {
-    let mut result = vec![G1Element::zero(); n];
+    let two_inverse = Scalar::from(2u128).inverse().unwrap();
+    let coefficient = -Scalar::from((n + 1) as u128) * two_inverse;
 
-    // Handle the special element in the first row, last column
-    result[0] =
-        vector[n - 1].mul(((Scalar::from((n - 1) as u128)) / (Scalar::from(2 as u128))).unwrap());
-
-    // Handle the diagonal elements below the main diagonal
-    for i in 1..n {
-        result[i] = vector[i - 1].mul(
-            Scalar::from(i as u128)
-                - (Scalar::from((n + 1) as u128) / Scalar::from(2u128)).unwrap(),
-        );
-    }
-
-    result
+    (0..n)
+        .map(|i| {
+            if i == 0 {
+                vector[n - 1].mul((Scalar::from((n - 1) as u128)) * two_inverse)
+            } else {
+                vector[i - 1].mul(coefficient + Scalar::from(i as u128))
+            }
+        })
+        .collect()
 }
 
 /// Multiplies a diagonal matrix by a vector
 fn multiply_d_matrix_by_vector(vector: &[Scalar]) -> Vec<Scalar> {
-    let n = vector.len();
-    let mut result = vec![Scalar::zero(); n];
-
-    for i in 0..n - 1 {
-        result[i] = Scalar::from((i + 1) as u128) * vector[i + 1];
-    }
-
-    result
+    vector[1..]
+        .iter()
+        .enumerate()
+        .map(|(i, v)| Scalar::from((i + 1) as u128) * v)
+        .collect()
 }
 
 /// Struct for KZG commitment scheme using derived elements
@@ -83,19 +74,7 @@ pub struct KZGDeriv {
 impl KZGDeriv {
     /// Computes the omega^index element
     fn element(&self, index: usize) -> Scalar {
-        if index > self.n {
-            return self.element(index & self.n);
-        } else if index == 0 {
-            return Scalar::generator();
-        } else if index == 1 {
-            return self.omega;
-        }
-
-        let half = self.element(index / 2);
-        if index % 2 == 0 {
-            return half * half;
-        }
-        half * half * self.omega
+        self.domain.element(index)
     }
 }
 
@@ -195,9 +174,7 @@ impl KZG for KZGDeriv {
     }
 
     /// Opens a KZG commitment at multiple indices
-    fn open_all(&self, v: &[Scalar], indices: Vec<usize>) -> Vec<G1Element> {
-        // Jonas: Why are the indices not used here?
-
+    fn open_all(&self, v: &[Scalar], indices: &[usize]) -> Vec<G1Element> {
         // Compute tau * Dhatv
         let idftv = self.domain.ifft(&v);
         let d_msm_idftv: Vec<Scalar> = multiply_d_matrix_by_vector(&idftv);
@@ -234,9 +211,9 @@ impl KZG for KZGDeriv {
             sparse_d_matrix_vector_multiply(&mult, mult.len());
         self.domain.ifft_in_place_group(&mut diadiv_idft_tau_v);
 
-        let result3 = diadiv_idft_tau_v.clone();
+        let result3 = diadiv_idft_tau_v;
 
-        let result = add_vectors(result1.clone(), result2.clone(), result3.clone());
+        let result = add_vectors(result1, result2, result3);
 
         result
     }
@@ -267,7 +244,7 @@ impl KZG for KZGDeriv {
 
     fn update_open_i(
         &self,
-        open: &mut G1Element,
+        open: &G1Element,
         index: usize,
         old_v_i: &Scalar,
         new_v_i: &Scalar,
@@ -277,7 +254,7 @@ impl KZG for KZGDeriv {
 
     fn update_open_j(
         &self,
-        open: &mut G1Element,
+        open: &G1Element,
         index: usize,
         index_j: usize,
         old_v_j: &Scalar,
@@ -377,7 +354,7 @@ mod tests {
         let v: Vec<Scalar> = (0..n).map(|_| OtherScalar::rand(&mut rng)).collect();
         let commitment = kzg.commit(&v);
         let indices: Vec<usize> = (0..n).collect();
-        let open_values = kzg.open_all(&v, indices.clone());
+        let open_values = kzg.open_all(&v, &indices);
 
         for (i, open_value) in open_values.iter().enumerate() {
             let is_valid = kzg.verify(indices[i], &v[indices[i]], &commitment, open_value);

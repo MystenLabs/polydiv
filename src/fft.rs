@@ -9,21 +9,44 @@ use fastcrypto::groups::{GroupElement, Scalar as ScalarTrait};
 use fastcrypto::serde_helpers::ToFromByteArray;
 
 pub trait FFTDomain: Sized {
-    type ScalarType;
+    type ScalarType: ScalarTrait;
 
+    /// Create a new domain with n elements.
     fn new(n: usize) -> FastCryptoResult<Self>;
 
+    /// Compute the FFT of a vector of scalars.
     fn fft(&self, v: &[Self::ScalarType]) -> Vec<Self::ScalarType>;
 
+    /// Compute the IFFT of a vector of scalars.
     fn ifft(&self, v_hat: &[Self::ScalarType]) -> Vec<Self::ScalarType>;
 
-    fn fft_in_place_group<G: GroupElement<ScalarType = Self::ScalarType>>(&self, v: &mut [G]);
+    /// Perform a FFT on elements of a group using the domains scalar type.
+    fn fft_in_place_group<G: GroupElement<ScalarType = Self::ScalarType>>(&self, v: &mut [G]) {
+        // TODO: Implement actual in-place algorithm.
+        // TODO: Do we need padding?
+        let result = fft_group(&v, &self.element(1));
+        v.copy_from_slice(&result);
+    }
 
-    fn ifft_in_place_group<G: GroupElement<ScalarType = Self::ScalarType>>(&self, v_hat: &mut [G]);
+    /// Perform an IFFT on elements of a group using the domains scalar type.
+    fn ifft_in_place_group<G: GroupElement<ScalarType = Self::ScalarType>>(&self, v_hat: &mut [G]) {
+        let mut result = fft_group(&v_hat, &self.element(self.size() - 1));
+        let n_inverse = self.size_inv();
+        for elem in result.iter_mut() {
+            *elem = elem.mul(&n_inverse);
+        }
+        v_hat.copy_from_slice(&result);
+    }
 
+    /// Get the i-th element of the domain which is the n-th root of unity to the index-th power.
+    /// This may be computed on request so it is not suitable for repeated calls.
     fn element(&self, index: usize) -> Self::ScalarType;
 
+    /// Get the size of the domain.
     fn size(&self) -> usize;
+
+    /// Get the inverse of the size of the domain as a scalar.
+    fn size_inv(&self) -> Self::ScalarType;
 }
 
 #[derive(Clone)]
@@ -61,37 +84,16 @@ impl FFTDomain for BLS12381Domain {
         result
     }
 
-    fn fft_in_place_group<G: GroupElement<ScalarType = Self::ScalarType>>(&self, v: &mut [G]) {
-        let mut padded_v = v.to_vec();
-        if padded_v.len() != self.domain.size() {
-            padded_v.resize(self.domain.size(), G::zero());
-        }
-        let root_of_unity = self.element(1);
-        let result = fft_group(&padded_v, &root_of_unity);
-        v.copy_from_slice(&result[..v.len()]);
-    }
-
-    fn ifft_in_place_group<G: GroupElement<ScalarType = Self::ScalarType>>(&self, v: &mut [G]) {
-        let n = v.len();
-        let root_of_unity = self.element(self.domain.size() - 1);
-        let mut padded_v_hat = v.to_vec();
-        if padded_v_hat.len() != self.domain.size() {
-            padded_v_hat.resize(self.domain.size(), G::zero());
-        }
-        let mut result = fft_group(&padded_v_hat, &root_of_unity);
-        let n_inverse = arkworks_to_fastcrypto(&self.domain.size_inv());
-        for elem in result.iter_mut() {
-            *elem = elem.mul(n_inverse);
-        }
-        v.copy_from_slice(&result[..v.len()]);
-    }
-
     fn element(&self, index: usize) -> Scalar {
         arkworks_to_fastcrypto(&self.domain.element(index))
     }
 
     fn size(&self) -> usize {
         self.domain.size()
+    }
+
+    fn size_inv(&self) -> Self::ScalarType {
+        arkworks_to_fastcrypto(&self.domain.size_inv())
     }
 }
 
@@ -107,7 +109,13 @@ fn arkworks_to_fastcrypto(f: &Fr) -> Scalar {
     Scalar::from_byte_array(&bytes).unwrap()
 }
 
-fn fft_group_offset<G: GroupElement>(
+/// Helper function for FFT function for group elements.
+fn fft_group<G: GroupElement>(v: &[G], root_of_unity: &<G as GroupElement>::ScalarType) -> Vec<G> {
+    fft_group_with_offset(v, 0, 1, v.len(), root_of_unity)
+}
+
+/// Compute the FFT of the elements {v_i} for i = offset, offset + step, offset + 2*step, ..., offset + (n-1)*step
+fn fft_group_with_offset<G: GroupElement>(
     v: &[G],
     offset: usize,
     step: usize,
@@ -118,23 +126,11 @@ fn fft_group_offset<G: GroupElement>(
         return vec![v[offset]];
     }
 
-    let half_n = n / 2;
-
     // TODO: This implicitly assumes that n is even
-    let even_fft = fft_group_offset(
-        v,
-        offset,
-        2 * step,
-        n - half_n,
-        &root_of_unity.mul(root_of_unity),
-    );
-    let odd_fft = fft_group_offset(
-        v,
-        offset + step,
-        2 * step,
-        half_n,
-        &root_of_unity.mul(root_of_unity),
-    );
+    let half_n = n / 2;
+    let root_of_unity_squared = root_of_unity.mul(root_of_unity);
+    let even_fft = fft_group_with_offset(v, offset, 2 * step, n - half_n, &root_of_unity_squared);
+    let odd_fft = fft_group_with_offset(v, offset + step, 2 * step, half_n, &root_of_unity_squared);
 
     let mut omega = G::ScalarType::from(1);
     let mut result = vec![G::zero(); n];
@@ -143,15 +139,12 @@ fn fft_group_offset<G: GroupElement>(
         let t = odd_fft[i].mul(&omega);
         result[i] = even_fft[i] + t;
         result[i + half_n] = even_fft[i] - t;
-        omega = root_of_unity.mul(omega);
+        if i < half_n - 1 {
+            omega = root_of_unity.mul(omega);
+        }
     }
 
     result
-}
-
-/// FFT function for G1 elements
-fn fft_group<G: GroupElement>(v: &[G], root_of_unity: &<G as GroupElement>::ScalarType) -> Vec<G> {
-    fft_group_offset(v, 0, 1, v.len(), root_of_unity)
 }
 
 #[cfg(test)]
