@@ -2,7 +2,7 @@
 
 use fastcrypto::error::FastCryptoResult;
 use fastcrypto::groups::bls12381::Scalar;
-use fastcrypto::groups::{GroupElement, Scalar as ScalarTrait};
+use fastcrypto::groups::GroupElement;
 
 pub mod kzg_deriv;
 pub mod kzg_fk;

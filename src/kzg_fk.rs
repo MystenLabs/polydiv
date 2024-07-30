@@ -1,11 +1,8 @@
 use std::ops::Mul;
 
-use ark_ff::FftField;
-use ark_poly::{EvaluationDomain, Polynomial};
 use fastcrypto::error::FastCryptoResult;
 use fastcrypto::groups::bls12381::{G1Element, G2Element, Scalar};
 use fastcrypto::groups::{GroupElement, MultiScalarMul, Pairing, Scalar as OtherScalar};
-use fastcrypto::serde_helpers::ToFromByteArray;
 use rand::thread_rng;
 
 use crate::fft::{BLS12381Domain, FFTDomain};
@@ -142,7 +139,9 @@ impl KZG for KZGFK {
 
     /// Opens a KZG commitment at multiple indices
     fn open_all(&self, v: &[Scalar], indices: Vec<usize>) -> Vec<G1Element> {
-        let mut poly = self.domain.ifft(v);
+        // Jonas: Why are the indices not used here?
+
+        let poly = self.domain.ifft(v);
         let degree = poly.len() - 1;
 
         let mut t = self.tau_powers_g1.clone();

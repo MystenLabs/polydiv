@@ -1,12 +1,11 @@
-use std::ops::{Add, Mul, Neg, Sub};
+use std::ops::Mul;
 
 use ark_bls12_381::Fr;
-use ark_ff::Field;
 use ark_ff::{BigInteger, PrimeField};
 use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
 use fastcrypto::error::{FastCryptoError, FastCryptoResult};
 use fastcrypto::groups::bls12381::Scalar;
-use fastcrypto::groups::GroupElement;
+use fastcrypto::groups::{GroupElement, Scalar as ScalarTrait};
 use fastcrypto::serde_helpers::ToFromByteArray;
 
 pub trait FFTDomain: Sized {
@@ -68,7 +67,7 @@ impl FFTDomain for BLS12381Domain {
             padded_v.resize(self.domain.size(), G::zero());
         }
         let root_of_unity = self.element(1);
-        let mut result = fft_group(&padded_v, &root_of_unity);
+        let result = fft_group(&padded_v, &root_of_unity);
         v.copy_from_slice(&result[..v.len()]);
     }
 
@@ -80,12 +79,9 @@ impl FFTDomain for BLS12381Domain {
             padded_v_hat.resize(self.domain.size(), G::zero());
         }
         let mut result = fft_group(&padded_v_hat, &root_of_unity);
-        let n_fr = Fr::from(n as u64);
-        let inv_n_fr = n_fr.inverse().unwrap();
-        let inv_n_scalar = arkworks_to_fastcrypto(&inv_n_fr);
-
+        let n_inverse = G::ScalarType::from(n as u128).inverse().unwrap();
         for elem in result.iter_mut() {
-            *elem = elem.mul(inv_n_scalar);
+            *elem = elem.mul(n_inverse);
         }
         v.copy_from_slice(&result[..v.len()]);
     }

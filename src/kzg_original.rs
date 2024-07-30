@@ -1,7 +1,6 @@
 use fastcrypto::error::{FastCryptoError, FastCryptoResult};
 use fastcrypto::groups::bls12381::{G1Element, G2Element, Scalar};
 use fastcrypto::groups::{GroupElement, MultiScalarMul, Pairing, Scalar as OtherScalar};
-use fastcrypto::serde_helpers::ToFromByteArray;
 use rand::thread_rng;
 
 use crate::fft::{BLS12381Domain, FFTDomain};

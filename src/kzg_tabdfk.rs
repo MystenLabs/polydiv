@@ -67,7 +67,6 @@ pub fn multiply_toeplitz_with_v(
 #[derive(Clone)]
 pub struct KZGTabDFK {
     domain: BLS12381Domain,
-    a: G1Element,
     g2_tau: G2Element,
     u_vec: Vec<G1Element>,
     l_vec: Vec<G1Element>,
@@ -125,7 +124,6 @@ impl KZG for KZGTabDFK {
         Ok(Self {
             domain,
             g2_tau,
-            a,
             u_vec,
             l_vec,
             a_vec,
@@ -164,6 +162,8 @@ impl KZG for KZGTabDFK {
     }
 
     fn open_all(&self, v: &[Scalar], indices: Vec<usize>) -> Vec<G1Element> {
+        // Jonas: Why are the indices not used here?
+
         let domain = &self.domain;
 
         let poly = domain.ifft(&v);

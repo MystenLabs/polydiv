@@ -122,8 +122,7 @@ impl KZG for KZGDeriv {
         let mut omega_i = Scalar::generator();
 
         // compute uvec using w_vec - original implementation
-
-        let mut u_vec: Vec<G1Element> = (0..n)
+        let u_vec: Vec<G1Element> = (0..n)
             .map(|i| {
                 let l_i_minus_1 = w_vec[i] - G1Element::generator();
                 let denom = tau - omega_i;
@@ -197,7 +196,7 @@ impl KZG for KZGDeriv {
 
     /// Opens a KZG commitment at multiple indices
     fn open_all(&self, v: &[Scalar], indices: Vec<usize>) -> Vec<G1Element> {
-        let n = v.len();
+        // Jonas: Why are the indices not used here?
 
         // Compute tau * Dhatv
         let idftv = self.domain.ifft(&v);
