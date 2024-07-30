@@ -1,12 +1,13 @@
+use std::ops::{Add, Mul, Neg, Sub};
+
 use ark_bls12_381::Fr;
 use ark_ff::{BigInteger, PrimeField};
+use ark_ff::Field;
 use ark_poly::{EvaluationDomain, GeneralEvaluationDomain};
 use fastcrypto::error::{FastCryptoError, FastCryptoResult};
-use fastcrypto::groups::bls12381::{Scalar, G1Element};
-use fastcrypto::serde_helpers::ToFromByteArray;
+use fastcrypto::groups::bls12381::Scalar;
 use fastcrypto::groups::GroupElement;
-use std::ops::{Mul, Sub, Add, Neg};
-use ark_ff::Field;
+use fastcrypto::serde_helpers::ToFromByteArray;
 
 pub trait FFTDomain: Sized {
     type ScalarType;
@@ -17,9 +18,9 @@ pub trait FFTDomain: Sized {
 
     fn ifft(&self, v_hat: &[Self::ScalarType]) -> Vec<Self::ScalarType>;
 
-    fn fft_in_place_g1(&self, v: &mut [G1Element]);
+    fn fft_in_place_g1<G: GroupElement<ScalarType = Self::ScalarType>>(&self, v: &mut [G]);
 
-    fn ifft_in_place_g1(&self, v_hat: &mut [G1Element]);
+    fn ifft_in_place_g1<G: GroupElement<ScalarType = Self::ScalarType>>(&self, v_hat: &mut [G]);
 
     fn element(&self, index: usize) -> Self::ScalarType;
 
@@ -41,7 +42,8 @@ impl FFTDomain for BLS12381Domain {
 
     fn fft(&self, v: &[Scalar]) -> Vec<Scalar> {
         let scalars = v.iter().map(fastcrypto_to_arkworks).collect::<Vec<_>>();
-        let result = self.domain
+        let result = self
+            .domain
             .fft(&scalars)
             .iter()
             .map(arkworks_to_fastcrypto)
@@ -51,7 +53,8 @@ impl FFTDomain for BLS12381Domain {
 
     fn ifft(&self, v_hat: &[Scalar]) -> Vec<Scalar> {
         let scalars = v_hat.iter().map(fastcrypto_to_arkworks).collect::<Vec<_>>();
-        let result = self.domain
+        let result = self
+            .domain
             .ifft(&scalars)
             .iter()
             .map(arkworks_to_fastcrypto)
@@ -59,28 +62,24 @@ impl FFTDomain for BLS12381Domain {
         result
     }
 
-    fn fft_in_place_g1(&self, v: &mut [G1Element]) {
+    fn fft_in_place_g1<G: GroupElement<ScalarType = Self::ScalarType>>(&self, v: &mut [G]) {
         let mut padded_v = v.to_vec();
         if padded_v.len() < self.domain.size() {
-            padded_v.resize(self.domain.size(), G1Element::zero());
-        } else if padded_v.len() > self.domain.size() {
-            padded_v.truncate(self.domain.size());
+            padded_v.resize(self.domain.size(), G::zero());
         }
         let root_of_unity = self.element(1);
-        let mut result = fft_g1(self, &padded_v, &root_of_unity);
+        let mut result = fft_g1(&padded_v, &root_of_unity);
         v.copy_from_slice(&result[..v.len()]);
     }
 
-    fn ifft_in_place_g1(&self, v: &mut [G1Element]) {
+    fn ifft_in_place_g1<G: GroupElement<ScalarType = Self::ScalarType>>(&self, v: &mut [G]) {
         let n = v.len();
         let root_of_unity = self.element(self.domain.size() - 1);
         let mut padded_v_hat = v.to_vec();
         if padded_v_hat.len() < self.domain.size() {
-            padded_v_hat.resize(self.domain.size(), G1Element::zero());
-        } else if padded_v_hat.len() > self.domain.size() {
-            padded_v_hat.truncate(self.domain.size());
+            padded_v_hat.resize(self.domain.size(), G::zero());
         }
-        let mut result = fft_g1(self, &padded_v_hat, &root_of_unity);
+        let mut result = fft_g1(&padded_v_hat, &root_of_unity);
         let n_fr = Fr::from(n as u64);
         let inv_n_fr = n_fr.inverse().unwrap();
         let inv_n_scalar = arkworks_to_fastcrypto(&inv_n_fr);
@@ -113,27 +112,27 @@ fn arkworks_to_fastcrypto(f: &Fr) -> Scalar {
 }
 
 /// FFT function for G1 elements
-fn fft_g1(domain: &BLS12381Domain, v: &[G1Element], root_of_unity: &Scalar) -> Vec<G1Element> {
+fn fft_g1<G: GroupElement>(v: &[G], root_of_unity: &<G as GroupElement>::ScalarType) -> Vec<G> {
     let n = v.len();
     if n <= 1 {
         return v.to_vec();
     }
 
     let half_n = n / 2;
-    let even: Vec<G1Element> = v.iter().step_by(2).cloned().collect();
-    let odd: Vec<G1Element> = v.iter().skip(1).step_by(2).cloned().collect();
+    let even: Vec<G> = v.iter().step_by(2).cloned().collect();
+    let odd: Vec<G> = v.iter().skip(1).step_by(2).cloned().collect();
 
-    let even_fft = fft_g1(domain, &even, &root_of_unity.mul(root_of_unity));
-    let odd_fft = fft_g1(domain, &odd, &root_of_unity.mul(root_of_unity));
+    let even_fft = fft_g1(&even, &root_of_unity.mul(root_of_unity));
+    let odd_fft = fft_g1(&odd, &root_of_unity.mul(root_of_unity));
 
-    let mut omega = Scalar::from(1);
-    let mut result = vec![G1Element::zero(); n];
+    let mut omega = G::ScalarType::from(1);
+    let mut result = vec![G::zero(); n];
 
     for i in 0..half_n {
         let t = odd_fft[i].mul(&omega);
         result[i] = even_fft[i] + t;
         result[i + half_n] = even_fft[i] - t;
-        omega *= root_of_unity;
+        omega = root_of_unity.mul(omega);
     }
 
     result
@@ -141,11 +140,12 @@ fn fft_g1(domain: &BLS12381Domain, v: &[G1Element], root_of_unity: &Scalar) -> V
 
 #[cfg(test)]
 mod tests {
-    use fastcrypto::groups::bls12381::{G1Element, Scalar};
-    use fastcrypto::groups::{GroupElement, Scalar as OtherScalar};
-    use rand::thread_rng;
-    use crate::fft::{BLS12381Domain, FFTDomain};
     use std::ops::Mul;
+
+    use fastcrypto::groups::{GroupElement, Scalar as OtherScalar};
+    use fastcrypto::groups::bls12381::{G1Element, Scalar};
+
+    use crate::fft::{BLS12381Domain, FFTDomain};
 
     #[test]
     fn test_fft() {
@@ -181,8 +181,14 @@ mod tests {
         let domain = BLS12381Domain::new(8).unwrap();
         let g = G1Element::generator();
         let v_scalar = vec![
-            Scalar::from(1), Scalar::from(2), Scalar::from(3), Scalar::from(4),
-            Scalar::from(4), Scalar::from(4), Scalar::from(4), Scalar::from(4)
+            Scalar::from(1),
+            Scalar::from(2),
+            Scalar::from(3),
+            Scalar::from(4),
+            Scalar::from(4),
+            Scalar::from(4),
+            Scalar::from(4),
+            Scalar::from(4),
         ];
         let v_group_elements: Vec<G1Element> = v_scalar.iter().map(|x| g.mul(x)).collect();
         let mut v_ifft_g = v_group_elements.clone();
