@@ -63,7 +63,7 @@ impl FFTDomain for BLS12381Domain {
 
     fn fft_in_place_group<G: GroupElement<ScalarType = Self::ScalarType>>(&self, v: &mut [G]) {
         let mut padded_v = v.to_vec();
-        if padded_v.len() < self.domain.size() {
+        if padded_v.len() != self.domain.size() {
             padded_v.resize(self.domain.size(), G::zero());
         }
         let root_of_unity = self.element(1);
@@ -75,7 +75,7 @@ impl FFTDomain for BLS12381Domain {
         let n = v.len();
         let root_of_unity = self.element(self.domain.size() - 1);
         let mut padded_v_hat = v.to_vec();
-        if padded_v_hat.len() < self.domain.size() {
+        if padded_v_hat.len() != self.domain.size() {
             padded_v_hat.resize(self.domain.size(), G::zero());
         }
         let mut result = fft_group(&padded_v_hat, &root_of_unity);
