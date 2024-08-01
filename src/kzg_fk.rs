@@ -138,7 +138,7 @@ impl KZG for KZGFK {
     }
 
     /// Opens a KZG commitment at multiple indices
-    fn open_all(&self, v: &[Scalar], indices: &[usize]) -> Vec<G1Element> {
+    fn open_all(&self, v: &[Scalar]) -> Vec<G1Element> {
         let poly = self.domain.ifft(v);
         let degree = poly.len() - 1;
 
@@ -146,15 +146,9 @@ impl KZG for KZGFK {
         t.truncate(degree);
         t.reverse();
 
-        let test_poly = {
-            let mut p = poly.clone();
-            p.reverse();
-            p.truncate(degree);
-            p.reverse();
-            p
-        };
+        let test_poly = &poly[poly.len() - degree..];
 
-        let h_test = compute_matrix_vector_multiplication(&test_poly, &t);
+        let h_test = compute_matrix_vector_multiplication(test_poly, &t);
 
         let mut result = vec![G1Element::zero(); poly.len()];
         for i in 0..degree {
@@ -238,13 +232,12 @@ mod tests {
         let kzg = KZGFK::new(n).unwrap();
         let v: Vec<Scalar> = (0..n).map(|_| OtherScalar::rand(&mut rng)).collect();
         let commitment = kzg.commit(&v);
-        let indices: Vec<usize> = (0..n).collect();
-        let mut open_values = kzg.open_all(&v, &indices);
+        let mut open_values = kzg.open_all(&v);
 
         open_values.truncate(n);
 
         for (i, open_value) in open_values.iter().enumerate() {
-            let is_valid = kzg.verify(indices[i], &v[indices[i]], &commitment, open_value);
+            let is_valid = kzg.verify(i, &v[i], &commitment, open_value);
             assert!(
                 is_valid,
                 "Verification of the opening should succeed for index {}",

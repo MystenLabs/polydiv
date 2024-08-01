@@ -69,6 +69,7 @@ pub struct KZGDeriv {
     g2_tau: G2Element,
     w_vec: Vec<G1Element>,
     u_vec: Vec<G1Element>,
+    omega_powers: Vec<Scalar>,
 }
 
 impl KZGDeriv {
@@ -98,19 +99,17 @@ impl KZG for KZGDeriv {
             .map(|s| g.mul(s))
             .collect();
 
-        let mut omega_i = Scalar::generator();
         let omega = domain.element(1);
+        let omega_powers: Vec<Scalar> = iterate(Scalar::generator(), |g| g * omega)
+            .take(n)
+            .collect();
 
         // compute uvec using w_vec - original implementation
         let u_vec: Vec<G1Element> = (0..n)
             .map(|i| {
                 let l_i_minus_1 = w_vec[i] - G1Element::generator();
-                let denom = tau - omega_i;
+                let denom = tau - omega_powers[i];
                 let u_i = (l_i_minus_1 / denom).unwrap();
-
-                if i < n - 1 {
-                    omega_i *= omega;
-                }
                 u_i
             })
             .collect();
@@ -122,6 +121,7 @@ impl KZG for KZGDeriv {
             g2_tau,
             w_vec,
             u_vec,
+            omega_powers,
         })
     }
 
@@ -132,28 +132,24 @@ impl KZG for KZGDeriv {
 
     /// Opens a KZG commitment at a specific index
     fn open(&self, v: &[Scalar], index: usize) -> G1Element {
-        // Initialize omega_i and omega_j_minus_i and compute powers
-        let omega_i = self.element(index);
-        let powers = iterate(Scalar::generator(), |g| g * self.omega)
-            .take(2 * self.n - index)
-            .collect::<Vec<_>>();
-        let omega_js = &powers[..self.n];
-        let omega_j_minus_is = &powers[self.n - index..];
-
         let (mut scalars, v_prime_terms): (Vec<Scalar>, Vec<Scalar>) = (0..v.len())
             .into_par_iter()
             .map(|j| {
                 if j != index {
-                    let diff_inverse = (omega_i - omega_js[j]).inverse().unwrap();
+                    let diff_inverse = (self.omega_powers[index] - self.omega_powers[j])
+                        .inverse()
+                        .unwrap();
                     (
                         (v[index] - v[j]) * diff_inverse,
-                        v[j] * omega_j_minus_is[j] * diff_inverse,
+                        v[j] * self.omega_powers
+                            [(self.domain.size() + j - index) % self.domain.size()]
+                            * diff_inverse,
                     )
                 } else {
                     (
                         Scalar::zero(),
                         v[j] * (Scalar::from((v.len() - 1) as u128)
-                            / (Scalar::from(2u128) * omega_i))
+                            / (Scalar::from(2u128) * self.omega_powers[index]))
                             .unwrap(),
                     )
                 }
@@ -166,7 +162,7 @@ impl KZG for KZGDeriv {
     }
 
     /// Opens a KZG commitment at multiple indices
-    fn open_all(&self, v: &[Scalar], indices: &[usize]) -> Vec<G1Element> {
+    fn open_all(&self, v: &[Scalar]) -> Vec<G1Element> {
         // Compute tau * Dhatv
         let idftv = self.domain.ifft(&v);
         let d_msm_idftv: Vec<Scalar> = multiply_d_matrix_by_vector(&idftv);
@@ -191,15 +187,13 @@ impl KZG for KZGDeriv {
             .collect();
 
         // Compute diadiv.powtau*v
-        let mut mult: Vec<G1Element> = self
+        let mut diadiv_idft_tau_v: Vec<G1Element> = self
             .w_vec
             .iter()
             .zip(v.iter())
             .map(|(a, b)| a.mul(*b))
             .collect();
-
-        self.domain.fft_in_place_group(&mut mult);
-        let mut diadiv_idft_tau_v: Vec<G1Element> = mult;
+        self.domain.fft_in_place_group(&mut diadiv_idft_tau_v);
         sparse_d_matrix_vector_multiply(&mut diadiv_idft_tau_v);
         self.domain.ifft_in_place_group(&mut diadiv_idft_tau_v);
 
@@ -219,7 +213,7 @@ impl KZG for KZGDeriv {
         open_i: &G1Element,
     ) -> bool {
         let lhs = *commitment - G1Element::generator() * v_i;
-        let rhs = self.g2_tau - G2Element::generator() * self.element(index);
+        let rhs = self.g2_tau - G2Element::generator() * self.omega_powers[index];
 
         lhs.pairing(&G2Element::generator()) == open_i.pairing(&rhs)
     }
@@ -345,11 +339,10 @@ mod tests {
         let kzg = KZGDeriv::new(n).unwrap();
         let v: Vec<Scalar> = (0..n).map(|_| OtherScalar::rand(&mut rng)).collect();
         let commitment = kzg.commit(&v);
-        let indices: Vec<usize> = (0..n).collect();
-        let open_values = kzg.open_all(&v, &indices);
+        let open_values = kzg.open_all(&v);
 
         for (i, open_value) in open_values.iter().enumerate() {
-            let is_valid = kzg.verify(indices[i], &v[indices[i]], &commitment, open_value);
+            let is_valid = kzg.verify(i, &v[i], &commitment, open_value);
             assert!(
                 is_valid,
                 "Verification of the opening should succeed for index {}",
