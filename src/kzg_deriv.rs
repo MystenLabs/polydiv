@@ -69,6 +69,7 @@ pub struct KZGDeriv {
     g2_tau: G2Element,
     w_vec: Vec<G1Element>,
     u_vec: Vec<G1Element>,
+    omega_powers: Vec<Scalar>,
 }
 
 impl KZGDeriv {
@@ -115,6 +116,10 @@ impl KZG for KZGDeriv {
             })
             .collect();
 
+        let omega_powers = iterate(Scalar::generator(), |g| g * omega)
+            .take(n)
+            .collect();
+
         Ok(Self {
             domain,
             n,
@@ -122,6 +127,7 @@ impl KZG for KZGDeriv {
             g2_tau,
             w_vec,
             u_vec,
+            omega_powers,
         })
     }
 
@@ -132,28 +138,24 @@ impl KZG for KZGDeriv {
 
     /// Opens a KZG commitment at a specific index
     fn open(&self, v: &[Scalar], index: usize) -> G1Element {
-        // Initialize omega_i and omega_j_minus_i and compute powers
-        let omega_i = self.element(index);
-        let powers = iterate(Scalar::generator(), |g| g * self.omega)
-            .take(2 * self.n - index)
-            .collect::<Vec<_>>();
-        let omega_js = &powers[..self.n];
-        let omega_j_minus_is = &powers[self.n - index..];
-
         let (mut scalars, v_prime_terms): (Vec<Scalar>, Vec<Scalar>) = (0..v.len())
             .into_par_iter()
             .map(|j| {
                 if j != index {
-                    let diff_inverse = (omega_i - omega_js[j]).inverse().unwrap();
+                    let diff_inverse = (self.omega_powers[index] - self.omega_powers[j])
+                        .inverse()
+                        .unwrap();
                     (
                         (v[index] - v[j]) * diff_inverse,
-                        v[j] * omega_j_minus_is[j] * diff_inverse,
+                        v[j] * self.omega_powers
+                            [(self.domain.size() + j - index) % self.domain.size()]
+                            * diff_inverse,
                     )
                 } else {
                     (
                         Scalar::zero(),
                         v[j] * (Scalar::from((v.len() - 1) as u128)
-                            / (Scalar::from(2u128) * omega_i))
+                            / (Scalar::from(2u128) * self.omega_powers[index]))
                             .unwrap(),
                     )
                 }
