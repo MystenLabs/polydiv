@@ -90,8 +90,8 @@ impl KZG for KZGOriginal {
     }
 
     /// Opens a KZG commitment at multiple indices
-    fn open_all(&self, v: &[Scalar], indices: &[usize]) -> Vec<G1Element> {
-        indices.iter().map(|i| self.open(v, *i)).collect()
+    fn open_all(&self, v: &[Scalar]) -> Vec<G1Element> {
+        (0..v.len()).iter().map(|i| self.open(v, *i)).collect()
     }
 
     /// Verifies a KZG opening

@@ -99,25 +99,19 @@ impl KZG for KZGDeriv {
             .map(|s| g.mul(s))
             .collect();
 
-        let mut omega_i = Scalar::generator();
         let omega = domain.element(1);
+        let omega_powers: Vec<Scalar> = iterate(Scalar::generator(), |g| g * omega)
+            .take(n)
+            .collect();
 
         // compute uvec using w_vec - original implementation
         let u_vec: Vec<G1Element> = (0..n)
             .map(|i| {
                 let l_i_minus_1 = w_vec[i] - G1Element::generator();
-                let denom = tau - omega_i;
+                let denom = tau - omega_powers[i];
                 let u_i = (l_i_minus_1 / denom).unwrap();
-
-                if i < n - 1 {
-                    omega_i *= omega;
-                }
                 u_i
             })
-            .collect();
-
-        let omega_powers = iterate(Scalar::generator(), |g| g * omega)
-            .take(n)
             .collect();
 
         Ok(Self {
@@ -168,7 +162,7 @@ impl KZG for KZGDeriv {
     }
 
     /// Opens a KZG commitment at multiple indices
-    fn open_all(&self, v: &[Scalar], indices: &[usize]) -> Vec<G1Element> {
+    fn open_all(&self, v: &[Scalar]) -> Vec<G1Element> {
         // Compute tau * Dhatv
         let idftv = self.domain.ifft(&v);
         let d_msm_idftv: Vec<Scalar> = multiply_d_matrix_by_vector(&idftv);
@@ -193,15 +187,13 @@ impl KZG for KZGDeriv {
             .collect();
 
         // Compute diadiv.powtau*v
-        let mut mult: Vec<G1Element> = self
+        let mut diadiv_idft_tau_v: Vec<G1Element> = self
             .w_vec
             .iter()
             .zip(v.iter())
             .map(|(a, b)| a.mul(*b))
             .collect();
-
-        self.domain.fft_in_place_group(&mut mult);
-        let mut diadiv_idft_tau_v: Vec<G1Element> = mult;
+        self.domain.fft_in_place_group(&mut diadiv_idft_tau_v);
         sparse_d_matrix_vector_multiply(&mut diadiv_idft_tau_v);
         self.domain.ifft_in_place_group(&mut diadiv_idft_tau_v);
 

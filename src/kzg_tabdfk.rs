@@ -161,7 +161,7 @@ impl KZG for KZGTabDFK {
         open
     }
 
-    fn open_all(&self, v: &[Scalar], indices: &[usize]) -> Vec<G1Element> {
+    fn open_all(&self, v: &[Scalar]) -> Vec<G1Element> {
         let domain = &self.domain;
 
         let poly = domain.ifft(&v);
