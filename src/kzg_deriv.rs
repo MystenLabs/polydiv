@@ -132,44 +132,37 @@ impl KZG for KZGDeriv {
 
     /// Opens a KZG commitment at a specific index
     fn open(&self, v: &[Scalar], index: usize) -> G1Element {
-        let scalars = Arc::new(Mutex::new(vec![Scalar::zero(); v.len()]));
-        let v_prime = Arc::new(Mutex::new(Scalar::zero()));
-
-        // Initialize omega_i and omega_j_minus_i
+        // Initialize omega_i and omega_j_minus_i and compute powers
         let omega_i = self.element(index);
-        let omega_base = Scalar::generator();
-        let omega_j_minus_i_base = self.element(self.n - index);
+        let powers = iterate(Scalar::generator(), |g| g * self.omega)
+            .take(2 * self.n - index)
+            .collect::<Vec<_>>();
+        let omega_js = &powers[..self.n];
+        let omega_j_minus_is = &powers[self.n - index..];
 
-        (0..v.len()).into_par_iter().for_each(|j| {
-            let mut local_omega_j = omega_base;
-            let mut local_omega_j_minus_i = omega_j_minus_i_base;
+        let (mut scalars, v_prime_terms): (Vec<Scalar>, Vec<Scalar>) = (0..v.len())
+            .into_par_iter()
+            .map(|j| {
+                if j != index {
+                    let diff_inverse = (omega_i - omega_js[j]).inverse().unwrap();
+                    (
+                        (v[index] - v[j]) * diff_inverse,
+                        v[j] * omega_j_minus_is[j] * diff_inverse,
+                    )
+                } else {
+                    (
+                        Scalar::zero(),
+                        v[j] * (Scalar::from((v.len() - 1) as u128)
+                            / (Scalar::from(2u128) * omega_i))
+                            .unwrap(),
+                    )
+                }
+            })
+            .collect();
 
-            // Compute local omegas
-            for _ in 0..j {
-                local_omega_j *= self.omega;
-                local_omega_j_minus_i *= self.omega;
-            }
+        scalars[index] = v_prime_terms.into_iter().reduce(|a, b| a + b).unwrap();
 
-            if j != index {
-                let diff_inverse = (omega_i - local_omega_j).inverse().unwrap();
-                let mut v_prime_guard = v_prime.lock().unwrap();
-                *v_prime_guard += v[j] * local_omega_j_minus_i * diff_inverse;
-
-                let mut scalars_guard = scalars.lock().unwrap();
-                scalars_guard[j] = (v[index] - v[j]) * diff_inverse;
-            } else {
-                let mut v_prime_guard = v_prime.lock().unwrap();
-                *v_prime_guard += v[j]
-                    * (Scalar::from((v.len() - 1) as u128) / (Scalar::from(2u128) * omega_i))
-                        .unwrap();
-            }
-        });
-
-        let v_prime = v_prime.lock().unwrap().clone();
-        let mut scalars_guard = scalars.lock().unwrap();
-        scalars_guard[index] = v_prime;
-
-        G1Element::multi_scalar_mul(&scalars_guard, &self.w_vec[..scalars_guard.len()]).unwrap()
+        G1Element::multi_scalar_mul(&scalars, &self.w_vec).unwrap()
     }
 
     /// Opens a KZG commitment at multiple indices
