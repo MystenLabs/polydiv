@@ -146,15 +146,9 @@ impl KZG for KZGFK {
         t.truncate(degree);
         t.reverse();
 
-        let test_poly = {
-            let mut p = poly.clone();
-            p.reverse();
-            p.truncate(degree);
-            p.reverse();
-            p
-        };
+        let test_poly = &poly[poly.len() - degree..];
 
-        let h_test = compute_matrix_vector_multiplication(&test_poly, &t);
+        let h_test = compute_matrix_vector_multiplication(test_poly, &t);
 
         let mut result = vec![G1Element::zero(); poly.len()];
         for i in 0..degree {
