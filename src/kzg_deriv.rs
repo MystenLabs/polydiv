@@ -21,34 +21,34 @@ fn add_vectors(v1: Vec<G1Element>, v2: Vec<G1Element>, v3: Vec<G1Element>) -> Ve
 }
 
 /// Performs sparse matrix-vector multiplication
-fn sparse_c_matrix_vector_multiply(vector: &Vec<G1Element>, n: usize) -> Vec<G1Element> {
+fn sparse_c_matrix_vector_multiply(vector: &mut Vec<G1Element>) {
+    let n = vector.len();
     let two_inverse = Scalar::from(2u128).inverse().unwrap();
     let coefficient = Scalar::from((n + 1) as u128) * two_inverse;
 
-    (0..n)
-        .map(|i| {
-            if i == 0 {
-                vector[n - 1].mul(-Scalar::from((n - 1) as u128) * two_inverse)
-            } else {
-                vector[i - 1].mul(coefficient - Scalar::from(i as u128))
-            }
-        })
-        .collect()
+    vector.rotate_right(1);
+    vector.iter_mut().enumerate().for_each(|(i, v)| {
+        if i == 0 {
+            *v = v.mul(-Scalar::from((n - 1) as u128) * two_inverse)
+        } else {
+            *v = v.mul(coefficient - Scalar::from(i as u128))
+        }
+    });
 }
 
-fn sparse_d_matrix_vector_multiply(vector: &Vec<G1Element>, n: usize) -> Vec<G1Element> {
+fn sparse_d_matrix_vector_multiply(vector: &mut Vec<G1Element>) {
+    let n = vector.len();
     let two_inverse = Scalar::from(2u128).inverse().unwrap();
     let coefficient = -Scalar::from((n + 1) as u128) * two_inverse;
 
-    (0..n)
-        .map(|i| {
-            if i == 0 {
-                vector[n - 1].mul((Scalar::from((n - 1) as u128)) * two_inverse)
-            } else {
-                vector[i - 1].mul(coefficient + Scalar::from(i as u128))
-            }
-        })
-        .collect()
+    vector.rotate_right(1);
+    vector.iter_mut().enumerate().for_each(|(i, v)| {
+        if i == 0 {
+            *v = v.mul((Scalar::from((n - 1) as u128)) * two_inverse)
+        } else {
+            *v = v.mul(coefficient + Scalar::from(i as u128))
+        }
+    });
 }
 
 /// Multiplies a diagonal matrix by a vector
@@ -99,6 +99,7 @@ impl KZG for KZGDeriv {
             .collect();
 
         let mut omega_i = Scalar::generator();
+        let omega = domain.element(1);
 
         // compute uvec using w_vec - original implementation
         let u_vec: Vec<G1Element> = (0..n)
@@ -108,13 +109,11 @@ impl KZG for KZGDeriv {
                 let u_i = (l_i_minus_1 / denom).unwrap();
 
                 if i < n - 1 {
-                    omega_i *= domain.element(1);
+                    omega_i *= omega;
                 }
                 u_i
             })
             .collect();
-
-        let omega = domain.element(1);
 
         Ok(Self {
             domain,
@@ -133,44 +132,37 @@ impl KZG for KZGDeriv {
 
     /// Opens a KZG commitment at a specific index
     fn open(&self, v: &[Scalar], index: usize) -> G1Element {
-        let scalars = Arc::new(Mutex::new(vec![Scalar::zero(); v.len()]));
-        let v_prime = Arc::new(Mutex::new(Scalar::zero()));
-
-        // Initialize omega_i and omega_j_minus_i
+        // Initialize omega_i and omega_j_minus_i and compute powers
         let omega_i = self.element(index);
-        let omega_base = Scalar::generator();
-        let omega_j_minus_i_base = self.element(self.n - index);
+        let powers = iterate(Scalar::generator(), |g| g * self.omega)
+            .take(2 * self.n - index)
+            .collect::<Vec<_>>();
+        let omega_js = &powers[..self.n];
+        let omega_j_minus_is = &powers[self.n - index..];
 
-        (0..v.len()).into_par_iter().for_each(|j| {
-            let mut local_omega_j = omega_base;
-            let mut local_omega_j_minus_i = omega_j_minus_i_base;
+        let (mut scalars, v_prime_terms): (Vec<Scalar>, Vec<Scalar>) = (0..v.len())
+            .into_par_iter()
+            .map(|j| {
+                if j != index {
+                    let diff_inverse = (omega_i - omega_js[j]).inverse().unwrap();
+                    (
+                        (v[index] - v[j]) * diff_inverse,
+                        v[j] * omega_j_minus_is[j] * diff_inverse,
+                    )
+                } else {
+                    (
+                        Scalar::zero(),
+                        v[j] * (Scalar::from((v.len() - 1) as u128)
+                            / (Scalar::from(2u128) * omega_i))
+                            .unwrap(),
+                    )
+                }
+            })
+            .collect();
 
-            // Compute local omegas
-            for _ in 0..j {
-                local_omega_j *= self.omega;
-                local_omega_j_minus_i *= self.omega;
-            }
+        scalars[index] = v_prime_terms.into_iter().reduce(|a, b| a + b).unwrap();
 
-            if j != index {
-                let diff_inverse = (omega_i - local_omega_j).inverse().unwrap();
-                let mut v_prime_guard = v_prime.lock().unwrap();
-                *v_prime_guard += v[j] * local_omega_j_minus_i * diff_inverse;
-
-                let mut scalars_guard = scalars.lock().unwrap();
-                scalars_guard[j] = (v[index] - v[j]) * diff_inverse;
-            } else {
-                let mut v_prime_guard = v_prime.lock().unwrap();
-                *v_prime_guard += v[j]
-                    * (Scalar::from((v.len() - 1) as u128) / (Scalar::from(2u128) * omega_i))
-                        .unwrap();
-            }
-        });
-
-        let v_prime = v_prime.lock().unwrap().clone();
-        let mut scalars_guard = scalars.lock().unwrap();
-        scalars_guard[index] = v_prime;
-
-        G1Element::multi_scalar_mul(&scalars_guard, &self.w_vec[..scalars_guard.len()]).unwrap()
+        G1Element::multi_scalar_mul(&scalars, &self.w_vec).unwrap()
     }
 
     /// Opens a KZG commitment at multiple indices
@@ -189,8 +181,8 @@ impl KZG for KZGDeriv {
         // Compute ColEDiv.tau*v
         let mut powtau = self.w_vec.clone();
         self.domain.fft_in_place_group(&mut powtau);
-        let mut col_hat_dft_tau: Vec<G1Element> =
-            sparse_c_matrix_vector_multiply(&powtau, powtau.len());
+        let mut col_hat_dft_tau = powtau;
+        sparse_c_matrix_vector_multiply(&mut col_hat_dft_tau);
         self.domain.ifft_in_place_group(&mut col_hat_dft_tau);
         let result2: Vec<G1Element> = col_hat_dft_tau
             .iter()
@@ -207,8 +199,8 @@ impl KZG for KZGDeriv {
             .collect();
 
         self.domain.fft_in_place_group(&mut mult);
-        let mut diadiv_idft_tau_v: Vec<G1Element> =
-            sparse_d_matrix_vector_multiply(&mult, mult.len());
+        let mut diadiv_idft_tau_v: Vec<G1Element> = mult;
+        sparse_d_matrix_vector_multiply(&mut diadiv_idft_tau_v);
         self.domain.ifft_in_place_group(&mut diadiv_idft_tau_v);
 
         let result3 = diadiv_idft_tau_v;
