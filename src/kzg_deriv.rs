@@ -213,7 +213,7 @@ impl KZG for KZGDeriv {
         open_i: &G1Element,
     ) -> bool {
         let lhs = *commitment - G1Element::generator() * v_i;
-        let rhs = self.g2_tau - G2Element::generator() * self.element(index);
+        let rhs = self.g2_tau - G2Element::generator() * self.omega_powers[index];
 
         lhs.pairing(&G2Element::generator()) == open_i.pairing(&rhs)
     }
@@ -339,11 +339,10 @@ mod tests {
         let kzg = KZGDeriv::new(n).unwrap();
         let v: Vec<Scalar> = (0..n).map(|_| OtherScalar::rand(&mut rng)).collect();
         let commitment = kzg.commit(&v);
-        let indices: Vec<usize> = (0..n).collect();
-        let open_values = kzg.open_all(&v, &indices);
+        let open_values = kzg.open_all(&v);
 
         for (i, open_value) in open_values.iter().enumerate() {
-            let is_valid = kzg.verify(indices[i], &v[indices[i]], &commitment, open_value);
+            let is_valid = kzg.verify(i, &v[i], &commitment, open_value);
             assert!(
                 is_valid,
                 "Verification of the opening should succeed for index {}",
