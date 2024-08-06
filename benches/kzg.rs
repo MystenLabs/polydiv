@@ -48,7 +48,7 @@ fn kzg_single<K: KZG, M: Measurement>(name: &str, c: &mut BenchmarkGroup<M>) {
         c.bench_function(format!("{}/open_all/{}", name, size), |b| {
             b.iter(|| kzg.open_all(&open_all_data));
         });
-        let mut open_values = kzg.open_all(&open_all_data);
+        let _open_values = kzg.open_all(&open_all_data);
 
         // Pick a new index to update
         let mut index_j;

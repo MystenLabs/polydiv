@@ -1,5 +1,4 @@
 use std::ops::Mul;
-use std::sync::{Arc, Mutex};
 
 use fastcrypto::error::FastCryptoResult;
 use fastcrypto::groups::bls12381::{G1Element, G2Element, Scalar};
@@ -65,7 +64,6 @@ fn multiply_d_matrix_by_vector(vector: &[Scalar]) -> Vec<Scalar> {
 pub struct KZGDeriv {
     domain: BLS12381Domain,
     n: usize,
-    omega: Scalar,
     g2_tau: G2Element,
     w_vec: Vec<G1Element>,
     u_vec: Vec<G1Element>,
@@ -117,7 +115,6 @@ impl KZG for KZGDeriv {
         Ok(Self {
             domain,
             n,
-            omega,
             g2_tau,
             w_vec,
             u_vec,
