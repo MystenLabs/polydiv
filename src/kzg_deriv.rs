@@ -132,23 +132,25 @@ impl KZG for KZGDeriv {
 
     /// Opens a KZG commitment at a specific index
     fn open(&self, v: &[Scalar], index: usize) -> G1Element {
-        let (mut scalars, v_prime_terms): (Vec<Scalar>, Vec<Scalar>) = (0..v.len())
+        let (mut scalars, v_prime_terms): (Vec<Scalar>, Vec<Scalar>) = v
             .into_par_iter()
-            .map(|j| {
+            .enumerate()
+            .into_par_iter()
+            .map(|(j, vj)| {
                 if j != index {
                     let diff_inverse = (self.omega_powers[index] - self.omega_powers[j])
                         .inverse()
                         .unwrap();
                     (
-                        (v[index] - v[j]) * diff_inverse,
-                        v[j] * self.omega_powers
+                        (v[index] - vj) * diff_inverse,
+                        vj * self.omega_powers
                             [(self.domain.size() + j - index) % self.domain.size()]
                             * diff_inverse,
                     )
                 } else {
                     (
                         Scalar::zero(),
-                        v[j] * (Scalar::from((v.len() - 1) as u128)
+                        vj * (Scalar::from((v.len() - 1) as u128)
                             / (Scalar::from(2u128) * self.omega_powers[index]))
                             .unwrap(),
                     )
