@@ -68,6 +68,7 @@ pub struct KZGDeriv {
     w_vec: Vec<G1Element>,
     u_vec: Vec<G1Element>,
     omega_powers: Vec<Scalar>,
+    col_e_div_w: Vec<G1Element>
 }
 
 impl KZGDeriv {
@@ -111,6 +112,12 @@ impl KZG for KZGDeriv {
                 u_i
             })
             .collect();
+        
+        //pre-compute ColEDiv
+        let mut col_e_div_w = w_vec.clone();
+        domain.fft_in_place_group(&mut col_e_div_w);
+        sparse_c_matrix_vector_multiply(&mut col_e_div_w);
+        domain.ifft_in_place_group(&mut col_e_div_w);
 
         Ok(Self {
             domain,
@@ -119,6 +126,7 @@ impl KZG for KZGDeriv {
             w_vec,
             u_vec,
             omega_powers,
+            col_e_div_w,
         })
     }
 
@@ -173,17 +181,12 @@ impl KZG for KZGDeriv {
             .map(|(a, b)| a.mul(*b))
             .collect();
 
-        // Compute ColEDiv.tau*v
-        let mut powtau = self.w_vec.clone();
-        self.domain.fft_in_place_group(&mut powtau);
-        let mut col_hat_dft_tau = powtau;
-        sparse_c_matrix_vector_multiply(&mut col_hat_dft_tau);
-        self.domain.ifft_in_place_group(&mut col_hat_dft_tau);
-        let result2: Vec<G1Element> = col_hat_dft_tau
-            .iter()
-            .zip(v.iter())
-            .map(|(a, b)| a.mul(*b))
-            .collect();
+        
+        
+        let result2: Vec<G1Element> = self.col_e_div_w.iter()
+        .zip(v.iter())
+        .map(|(a, b)| a.mul(*b))
+        .collect();
 
         // Compute diadiv.powtau*v
         let mut diadiv_idft_tau_v: Vec<G1Element> = self
